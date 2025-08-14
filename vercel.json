@@ -1,0 +1,50 @@
+{
+  "name": "sportmaster-bot",
+  "functions": {
+    "pages/api/webhook/telegram.js": {
+      "maxDuration": 60
+    },
+    "pages/api/manual/**/*.js": {
+      "maxDuration": 60
+    },
+    "pages/api/**/*.js": {
+      "maxDuration": 30
+    }
+  },
+  "regions": ["cle1"],
+  "crons": [
+    {
+      "path": "/api/cron/daily-setup",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/hype",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/check-timing",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/results", 
+      "schedule": "0 21 * * *"
+    },
+    {
+      "path": "/api/cron/promo",
+      "schedule": "0 10,14,18 * * *"
+    },
+    {
+      "path": "/api/cron/summary",
+      "schedule": "0 21 * * *"
+    }
+    ,
+    {
+      "path": "/api/cron/live-status",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/channel-stats",
+      "schedule": "*/30 * * * *"
+    }
+  ]
+}

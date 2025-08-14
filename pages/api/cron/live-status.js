@@ -26,20 +26,57 @@ export default async function handler(req, res) {
     const contentGenerator = new ContentGenerator();
     const telegram = new TelegramManager();
 
-    const liveMatches = await footballAPI.getLiveMatches();
-    // Focus around 60' (45-75). If none, skip to reduce noise
-    const midGame = liveMatches.filter(m => typeof m.minute === 'number' && m.minute >= 45 && m.minute <= 75);
-    if (midGame.length === 0) {
-      return res.status(200).json({ success: true, message: "No mid-game live matches (45-75')", liveCount: liveMatches.length, action: 'skipped' });
+    // Get tracked matches (ones we sent predictions for)
+    const fs = require('fs');
+    const path = require('path');
+    const trackedFilePath = path.join('/tmp', 'tracked-matches.json');
+    let trackedMatches = {};
+    
+    if (fs.existsSync(trackedFilePath)) {
+      try {
+        trackedMatches = JSON.parse(fs.readFileSync(trackedFilePath, 'utf8'));
+        console.log(`📋 Found ${Object.keys(trackedMatches).length} tracked matches from predictions`);
+      } catch (e) {
+        console.log('⚠️ Error reading tracked matches:', e.message);
+      }
     }
+
+    if (Object.keys(trackedMatches).length === 0) {
+      return res.status(200).json({ success: true, message: "No tracked matches from predictions", action: 'skipped' });
+    }
+
+    // Get live matches and filter to only our tracked ones
+    const allLiveMatches = await footballAPI.getLiveMatches();
+    const ourLiveMatches = allLiveMatches.filter(match => {
+      // Try to match by team names
+      return Object.values(trackedMatches).some(tracked => 
+        (tracked.homeTeam === match.homeTeam && tracked.awayTeam === match.awayTeam) ||
+        (match.homeTeam.includes(tracked.homeTeam) || tracked.homeTeam.includes(match.homeTeam)) &&
+        (match.awayTeam.includes(tracked.awayTeam) || tracked.awayTeam.includes(match.awayTeam))
+      );
+    });
+
+    if (ourLiveMatches.length === 0) {
+      return res.status(200).json({ 
+        success: true, 
+        message: "None of our predicted matches are currently live", 
+        trackedCount: Object.keys(trackedMatches).length,
+        allLiveCount: allLiveMatches.length,
+        action: 'skipped' 
+      });
+    }
+
+    console.log(`🎯 Found ${ourLiveMatches.length} of our predicted matches currently live`);
+    const midGame = ourLiveMatches;
 
     const content = await contentGenerator.generateLiveStatus(midGame);
     const result = await telegram.sendLiveStatus(content, midGame);
 
     return res.status(200).json({
       success: true,
-      message: `Live status sent (${midGame.length} matches around 60')`,
+      message: `Live status sent for ${midGame.length} predicted match(es)`,
       liveCount: midGame.length,
+      trackedCount: Object.keys(trackedMatches).length,
       ethiopianTime,
       result
     });

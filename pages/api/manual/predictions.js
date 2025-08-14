@@ -115,6 +115,32 @@ export default async function handler(req, res) {
 
     // Otherwise send to Telegram
     const result = await telegram.sendPredictions([prediction], [nextMatch]);
+    
+    // Track this match for live updates
+    const fs = require('fs');
+    const path = require('path');
+    const trackedFilePath = path.join('/tmp', 'tracked-matches.json');
+    let trackedMatches = {};
+    
+    if (fs.existsSync(trackedFilePath)) {
+      try {
+        trackedMatches = JSON.parse(fs.readFileSync(trackedFilePath, 'utf8'));
+      } catch (e) {
+        trackedMatches = {};
+      }
+    }
+    
+    const matchId = nextMatch.id || `${nextMatch.homeTeam?.name || nextMatch.homeTeam}_vs_${nextMatch.awayTeam?.name || nextMatch.awayTeam}`;
+    trackedMatches[matchId] = {
+      homeTeam: nextMatch.homeTeam?.name || nextMatch.homeTeam,
+      awayTeam: nextMatch.awayTeam?.name || nextMatch.awayTeam,
+      competition: nextMatch.competition?.name || nextMatch.competition,
+      kickoffTime: nextMatch.kickoffTime,
+      predictedDate: new Date().toISOString().split('T')[0]
+    };
+    fs.writeFileSync(trackedFilePath, JSON.stringify(trackedMatches), 'utf8');
+    console.log(`📋 Tracking match for live updates: ${nextMatch.homeTeam?.name || nextMatch.homeTeam} vs ${nextMatch.awayTeam?.name || nextMatch.awayTeam}`);
+    
     await markCooldown(cdKey);
     await releaseLock('predictions-run');
 

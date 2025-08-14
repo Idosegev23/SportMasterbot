@@ -36,10 +36,34 @@ function loadSentPredictions() {
   }
 }
 
-function saveSentPrediction(matchId) {
+function saveSentPrediction(matchId, matchData = null) {
   try {
     const today = new Date().toISOString().split('T')[0];
     sentPredictionsToday.add(matchId);
+    
+    // Also save tracked matches for live updates
+    const trackedFilePath = path.join('/tmp', 'tracked-matches.json');
+    let trackedMatches = {};
+    
+    if (fs.existsSync(trackedFilePath)) {
+      try {
+        trackedMatches = JSON.parse(fs.readFileSync(trackedFilePath, 'utf8'));
+      } catch (e) {
+        trackedMatches = {};
+      }
+    }
+    
+    if (matchData) {
+      trackedMatches[matchId] = {
+        homeTeam: matchData.homeTeam?.name || matchData.homeTeam,
+        awayTeam: matchData.awayTeam?.name || matchData.awayTeam,
+        competition: matchData.competition?.name || matchData.competition,
+        kickoffTime: matchData.kickoffTime,
+        predictedDate: today
+      };
+      fs.writeFileSync(trackedFilePath, JSON.stringify(trackedMatches), 'utf8');
+      console.log(`📋 Tracking match for live updates: ${matchData.homeTeam?.name || matchData.homeTeam} vs ${matchData.awayTeam?.name || matchData.awayTeam}`);
+    }
     
     const data = {
       date: today,
@@ -243,8 +267,8 @@ export default async function handler(req, res) {
     const message = await telegram.sendPredictions(content, [matchToPredict.match]);
     await markCooldown(cronCdKey);
 
-    // Mark this prediction as sent
-    saveSentPrediction(matchToPredict.matchId);
+    // Mark this prediction as sent and track for live updates
+    saveSentPrediction(matchToPredict.matchId, matchToPredict.match);
 
     console.log('✅ Individual match prediction sent successfully');
     await releaseLock('cron-individual-prediction');

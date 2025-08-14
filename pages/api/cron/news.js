@@ -11,14 +11,10 @@ export default async function handler(req, res) {
     const TelegramManager = require('../../../lib/telegram');
     const telegram = new TelegramManager();
     
-    // Simple news headlines - can be enhanced with RSS feeds later
-    const headlines = [
-      "🏆 Breaking: Latest Champions League results and upcoming fixtures",
-      "⚽ Transfer Update: Major signings completed this week", 
-      "🏅 International Football: Key matches and standings",
-      "📊 Performance Analysis: Top players and team statistics",
-      "🔥 Match Preview: Must-watch games coming up today"
-    ];
+    // Fetch real news headlines from RSS feeds
+    const NewsFetcher = require('../../../lib/news-fetcher');
+    const newsFetcher = new NewsFetcher();
+    const headlines = await newsFetcher.fetchLatestNews(5);
     
     // Send news to channel
     await telegram.sendNews(headlines);

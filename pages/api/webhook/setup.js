@@ -17,8 +17,10 @@ export default async function handler(req, res) {
     const baseUrl = `https://api.telegram.org/bot${token}`;
 
     if (action === 'set') {
-      // Set webhook
-      const webhookUrl = `${req.headers['x-forwarded-proto'] || 'https'}://${req.headers.host}/api/webhook/telegram`;
+      // Set webhook - FORCE use of stable domain
+      const webhookUrl = process.env.PUBLIC_BASE_URL 
+        ? `${process.env.PUBLIC_BASE_URL}/api/webhook/telegram`
+        : 'https://idosegev23.vercel.app/api/webhook/telegram';
       
       const response = await fetch(`${baseUrl}/setWebhook`, {
         method: 'POST',

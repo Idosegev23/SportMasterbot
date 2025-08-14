@@ -48,14 +48,17 @@ export default async function handler(req, res) {
     let matches;
     const bypassFilters = req.query.bypassFilters === '1' || req.query.source === 'all';
 
-    // Try cached daily schedule first
+    // Try cached daily schedule first for consistency with cron
     const cached = await getDailySchedule();
     if (cached?.matches?.length) {
       matches = cached.matches;
+      console.log('📋 Using cached daily schedule for consistency');
     } else if (bypassFilters) {
       matches = await footballAPI.getAllTodayMatchesRanked();
+      console.log('🌍 Using all leagues as fallback');
     } else {
       matches = await footballAPI.getTodayMatches();
+      console.log('⭐ Using popular leagues as fallback');
     }
     
     if (matches.length === 0) {

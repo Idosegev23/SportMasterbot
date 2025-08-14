@@ -82,6 +82,18 @@ export default function AdminDashboard() {
     } catch (e) { setMessage('Failed: ' + e.message); }
     setLoading(false);
   };
+  const forceWebhookUpdate = async () => {
+    setLoading(true);
+    setMessage('Updating webhook...');
+    try {
+      const r = await fetch('/api/admin/force-webhook-update', { method: 'POST' });
+      const d = await r.json();
+      setMessage(d.success ? '✅ Webhook updated successfully!' : '❌ Failed to update webhook: ' + d.message);
+    } catch (e) {
+      setMessage('❌ Error updating webhook: ' + e.message);
+    }
+    setLoading(false);
+  };
 
   return (
     <Layout>
@@ -102,6 +114,7 @@ export default function AdminDashboard() {
         <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
           <button onClick={startSystem}>Start System</button>
           <button onClick={restartBot}>Restart Bot</button>
+          <button onClick={forceWebhookUpdate} style={{ backgroundColor: '#e74c3c' }}>🔄 Force Webhook Update</button>
           <button onClick={sendPredictions}>Send Predictions</button>
           <button onClick={sendResults}>Send Results</button>
           <button onClick={()=>sendPromo('football')}>Send Football Promo</button>

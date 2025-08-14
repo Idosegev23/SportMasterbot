@@ -609,7 +609,7 @@ function ViewsTable({ rows, fmtET }) {
             `}</style>
           </div>
         )}
-    </Modal>
+      </Modal>
 
       <style jsx>{`
         .tbl-wrap { overflow: auto; }

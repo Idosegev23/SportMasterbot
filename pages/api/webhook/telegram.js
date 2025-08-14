@@ -583,11 +583,28 @@ export default async function handler(req, res) {
           default:
             // Forward to SimpleBotCommands callback handlers
             console.log('🔄 Forwarding callback to SimpleBotCommands:', action);
-            if (botInstance && botInstance.bot && botInstance.bot.listeners('callback_query').length > 0) {
-              // Trigger the callback_query event manually
-              botInstance.bot.emit('callback_query', callbackQuery);
-            } else {
-              await botInstance.bot.sendMessage(chatId, '❓ Unknown action');
+            try {
+              // Call the callback handler directly
+              if (botInstance.handleCallback) {
+                await botInstance.handleCallback(callbackQuery);
+              } else {
+                // Extract callback logic and call directly
+                await botInstance.bot.answerCallbackQuery(callbackQuery.id);
+                
+                // Handle cmd_news specifically
+                if (action === 'cmd_news') {
+                  await botInstance.bot.editMessageText(
+                    '📰 <i>Generating news content...</i>',
+                    { chat_id: chatId, message_id: messageId, parse_mode: 'HTML' }
+                  );
+                  await botInstance.executeNews(chatId);
+                } else {
+                  await botInstance.bot.sendMessage(chatId, '❓ Unknown action: ' + action);
+                }
+              }
+            } catch (error) {
+              console.error('❌ Callback forwarding error:', error);
+              await botInstance.bot.sendMessage(chatId, '❌ Error: ' + error.message);
             }
         }
       } catch (error) {

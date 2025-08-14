@@ -489,6 +489,11 @@ export default async function handler(req, res) {
             await safeEditMessageText(botInstance.bot, chatId, messageId, '📈 <i>Checking system status...</i>', { parse_mode: 'HTML' });
             await botInstance.showSystemStatus(chatId);
             break;
+
+          case 'cmd_news':
+            await safeEditMessageText(botInstance.bot, chatId, messageId, '📰 <i>Generating news content...</i>', { parse_mode: 'HTML' });
+            await botInstance.executeNews(chatId);
+            break;
           case 'cmd_buttons':
             await botInstance.startButtonsWizard(chatId, messageId);
             break;

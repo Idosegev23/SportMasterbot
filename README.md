@@ -326,4 +326,4 @@ curl -X POST https://your-domain.vercel.app/api/start
 
 ---
 
-**🎯 GizeBets - המערכת המתקדמת ביותר לניהול תוכן אוטומטי בטלגרם!**
+**🎯 GizeBets - המערכת המתקדמת ביותר לניהול תוכן אוטומטי בטלגרם!**// force redeploy

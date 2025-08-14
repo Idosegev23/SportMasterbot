@@ -581,7 +581,14 @@ export default async function handler(req, res) {
             break;
 
           default:
-            await botInstance.bot.sendMessage(chatId, '❓ Unknown action');
+            // Forward to SimpleBotCommands callback handlers
+            console.log('🔄 Forwarding callback to SimpleBotCommands:', action);
+            if (botInstance && botInstance.bot && botInstance.bot.listeners('callback_query').length > 0) {
+              // Trigger the callback_query event manually
+              botInstance.bot.emit('callback_query', callbackQuery);
+            } else {
+              await botInstance.bot.sendMessage(chatId, '❓ Unknown action');
+            }
         }
       } catch (error) {
         console.error('❌ Callback error:', error);

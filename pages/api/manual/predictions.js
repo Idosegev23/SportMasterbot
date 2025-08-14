@@ -68,8 +68,24 @@ export default async function handler(req, res) {
       });
     }
 
-    // Generate predictions (using generateTop5Predictions)
-    const predictions = await contentGenerator.generateTop5Predictions(matches);
+    // Find the next upcoming match (closest kickoff time)
+    const now = new Date();
+    const upcomingMatches = matches
+      .filter(match => new Date(match.kickoffTime) > now)
+      .sort((a, b) => new Date(a.kickoffTime) - new Date(b.kickoffTime));
+    
+    if (upcomingMatches.length === 0) {
+      await releaseLock('predictions-run');
+      return res.json({
+        success: false,
+        message: 'No upcoming matches found for predictions',
+        matchCount: 0
+      });
+    }
+
+    // Generate prediction for the next match only
+    const nextMatch = upcomingMatches[0];
+    const prediction = await contentGenerator.generateSingleMatchPrediction(nextMatch, 0, 1);
 
     // If dry-run, do NOT send to Telegram – just return the generated content
     if (dryRun) {
@@ -77,28 +93,40 @@ export default async function handler(req, res) {
       return res.json({
         success: true,
         dryRun: true,
-        message: `Predictions generated for ${matches.length} matches (not sent)`,
+        message: `Prediction generated for next match: ${nextMatch.homeTeam?.name || nextMatch.homeTeam} vs ${nextMatch.awayTeam?.name || nextMatch.awayTeam}`,
         preview: {
-          items: Array.isArray(predictions) ? predictions.slice(0, 5) : [predictions],
-          totalItems: Array.isArray(predictions) ? predictions.length : 1
+          items: [prediction],
+          totalItems: 1,
+          nextMatch: {
+            homeTeam: nextMatch.homeTeam?.name || nextMatch.homeTeam,
+            awayTeam: nextMatch.awayTeam?.name || nextMatch.awayTeam,
+            kickoffTime: nextMatch.kickoffTime,
+            competition: nextMatch.competition?.name || nextMatch.competition
+          }
         },
-        matchCount: matches.length,
+        matchCount: 1,
         timestamp: new Date().toISOString(),
         ethiopianTime: new Date().toLocaleString('en-US', { timeZone: 'Africa/Addis_Ababa' })
       });
     }
 
     // Otherwise send to Telegram
-    const result = await telegram.sendPredictions(predictions, matches);
+    const result = await telegram.sendPredictions([prediction], [nextMatch]);
     await markCooldown(cdKey);
     await releaseLock('predictions-run');
 
     res.json({
       success: true,
-      message: `Predictions sent successfully for ${matches.length} matches`,
+      message: `Prediction sent successfully for next match: ${nextMatch.homeTeam?.name || nextMatch.homeTeam} vs ${nextMatch.awayTeam?.name || nextMatch.awayTeam}`,
       result: {
         messageId: result?.message_id || null,
-        matchCount: matches.length
+        matchCount: 1,
+        nextMatch: {
+          homeTeam: nextMatch.homeTeam?.name || nextMatch.homeTeam,
+          awayTeam: nextMatch.awayTeam?.name || nextMatch.awayTeam,
+          kickoffTime: nextMatch.kickoffTime,
+          competition: nextMatch.competition?.name || nextMatch.competition
+        }
       },
       timestamp: new Date().toISOString(),
       ethiopianTime: new Date().toLocaleString('en-US', { timeZone: 'Africa/Addis_Ababa' }),

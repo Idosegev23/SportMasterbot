@@ -75,3 +75,4 @@ coverage/
 .VolumeIcon.icns
 .com.apple.timemachine.donotpresent.env*
 *.env
+.env*.local

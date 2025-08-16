@@ -35,8 +35,8 @@ export default async function handler(req, res) {
       });
     }
 
-    // Generate results (using generateLiveResults)
-    const resultsContent = await contentGenerator.generateLiveResults(results);
+    // Generate results (using generateDailyResults for better formatting)
+    const resultsContent = await contentGenerator.generateDailyResults(results);
 
     // If dry-run, do NOT send to Telegram – just return the generated content
     if (dryRun) {

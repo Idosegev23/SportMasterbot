@@ -31,12 +31,52 @@ export default async function handler(req, res) {
     const contentGenerator = new ContentGenerator();
     const telegram = new TelegramManager();
 
-    // get live matches
-    const liveMatches = await footballAPI.getLiveMatches();
+    // Get tracked matches from Supabase (ones we sent predictions for)
+    const { supabase } = require('../../../lib/supabase');
+    let trackedMatches = {};
+    
+    try {
+      // Get matches from last 24 hours that we sent predictions for
+      const { data: posts, error } = await supabase
+        .from('telegram_posts')
+        .select('*')
+        .eq('type', 'predictions')
+        .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+        .order('created_at', { ascending: false });
 
-    // Optional filter: prioritize around 60' (45-75)
-    const midGame = liveMatches.filter(m => typeof m.minute === 'number' && m.minute >= 45 && m.minute <= 75);
-    const matchesForStatus = midGame.length > 0 ? midGame : liveMatches;
+      if (error) throw error;
+
+      // Extract match info from metadata
+      posts.forEach(post => {
+        if (post.metadata && post.metadata.homeTeam && post.metadata.awayTeam) {
+          const matchKey = `${post.metadata.homeTeam}_vs_${post.metadata.awayTeam}`;
+          trackedMatches[matchKey] = post.metadata;
+        }
+      });
+
+      console.log(`📋 Found ${Object.keys(trackedMatches).length} tracked matches from predictions in last 24h`);
+    } catch (e) {
+      console.log('⚠️ Error reading tracked matches from Supabase:', e.message);
+    }
+
+    // Get all live matches and filter to only our tracked ones
+    const allLiveMatches = await footballAPI.getLiveMatches();
+    let matchesForStatus = allLiveMatches.filter(match => {
+      // Try to match by team names
+      return Object.values(trackedMatches).some(tracked => 
+        (tracked.homeTeam === match.homeTeam && tracked.awayTeam === match.awayTeam) ||
+        (match.homeTeam.includes(tracked.homeTeam) || tracked.homeTeam.includes(match.homeTeam)) &&
+        (match.awayTeam.includes(tracked.awayTeam) || tracked.awayTeam.includes(match.awayTeam))
+      );
+    });
+
+    // If no tracked matches are live, fall back to all live matches
+    if (matchesForStatus.length === 0) {
+      console.log('⚠️ No tracked matches currently live, showing all live matches');
+      matchesForStatus = allLiveMatches;
+    } else {
+      console.log(`🎯 Found ${matchesForStatus.length} of our predicted matches currently live`);
+    }
 
     const content = await contentGenerator.generateLiveStatus(matchesForStatus);
 

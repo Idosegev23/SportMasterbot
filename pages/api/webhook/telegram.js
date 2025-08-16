@@ -62,7 +62,8 @@ export default async function handler(req, res) {
 
       // Public opt-in: /start join / join_personal
       if (text.startsWith('/start') && text.includes('join')) {
-        await upsertUserFromMsg(msg, true);
+        const channelId = process.env.CHANNEL_DB_UUID || process.env.SUPABASE_DEFAULT_CHANNEL_ID || process.env.CHANNEL_ID;
+        await upsertUserFromMsg(msg, true, channelId);
         // Extract tag after 'start '
         let sourceTag = 'join';
         try {
@@ -204,7 +205,8 @@ export default async function handler(req, res) {
         }
       } else if (text.startsWith('/start')) {
         // Public /start without join – invite to join
-        await upsertUserFromMsg(msg, false);
+        const channelId = process.env.CHANNEL_DB_UUID || process.env.SUPABASE_DEFAULT_CHANNEL_ID || process.env.CHANNEL_ID;
+        await upsertUserFromMsg(msg, false, channelId);
         await recordInteraction(msg, 'start', {});
         await botInstance.bot.sendMessage(msg.chat.id,
           '👋 Welcome!\n\nTap to allow personalized coupons and updates:',
@@ -280,7 +282,8 @@ export default async function handler(req, res) {
 
       // Public consent callback
       if (action === 'public:consent') {
-        await upsertUserFromMsg(callbackQuery, true);
+        const channelId = process.env.CHANNEL_DB_UUID || process.env.SUPABASE_DEFAULT_CHANNEL_ID || process.env.CHANNEL_ID;
+        await upsertUserFromMsg(callbackQuery, true, channelId);
         await recordInteraction(callbackQuery, 'consent', {});
         await botInstance.bot.editMessageText('✅ Thank you! You will receive personalized coupons and updates.', { chat_id: chatId, message_id: messageId });
         return res.status(200).json({ success: true });

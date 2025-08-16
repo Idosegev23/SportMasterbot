@@ -85,8 +85,9 @@ export default async function handler(req, res) {
     });
 
     // Save today's schedule (file-based persistence, swappable to DB later)
+    const { getTodayDateStr } = require('../../../lib/storage');
     const scheduleData = {
-      date: new Date().toISOString().split('T')[0],
+      date: getTodayDateStr(), // Use consistent Ethiopian timezone date
       matches: matches,
       predictionTimes: predictionTimes,
       loadedAt: new Date().toISOString()

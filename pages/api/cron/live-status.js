@@ -141,8 +141,6 @@ export default async function handler(req, res) {
     const currentHash = createHash('md5').update(currentMatchState).digest('hex');
     
     // Store last hash in temp file
-    const fs = require('fs');
-    const path = require('path');
     const hashFilePath = path.join('/tmp', 'last-live-state.txt');
     
     let lastHash = '';

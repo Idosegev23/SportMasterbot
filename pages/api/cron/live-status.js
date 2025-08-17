@@ -38,25 +38,36 @@ export default async function handler(req, res) {
         const { data: posts, error } = await supabase
           .from('telegram_posts')
           .select('metadata')
-          .eq('type', 'prediction')
+          .eq('type', 'predictions')
           .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
 
         if (!error && posts && posts.length > 0) {
           const predictedPairs = new Set();
           posts.forEach(post => {
-            if (post.metadata && post.metadata.matches) {
-              post.metadata.matches.forEach(match => {
-                if (match.homeTeam && match.awayTeam) {
-                  predictedPairs.add(`${match.homeTeam.toLowerCase()}__${match.awayTeam.toLowerCase()}`);
-                }
-              });
+            if (post.metadata) {
+              // Check if it's a single match metadata (new format)
+              if (post.metadata.homeTeam && post.metadata.awayTeam) {
+                predictedPairs.add(`${post.metadata.homeTeam.toLowerCase()}__${post.metadata.awayTeam.toLowerCase()}`);
+              }
+              // Check if it's an array of matches (old format)
+              else if (post.metadata.matches) {
+                post.metadata.matches.forEach(match => {
+                  if (match.homeTeam && match.awayTeam) {
+                    predictedPairs.add(`${match.homeTeam.toLowerCase()}__${match.awayTeam.toLowerCase()}`);
+                  }
+                });
+              }
             }
           });
           
           if (predictedPairs.size > 0) {
             console.log(`📋 Found ${predictedPairs.size} predicted matches in last 24h`);
+            console.log('🔍 Predicted pairs:', Array.from(predictedPairs));
+            console.log('🔍 Live matches before filter:', midGame.map(g => `${String(g.homeTeam).toLowerCase()}__${String(g.awayTeam).toLowerCase()}`));
             midGame = midGame.filter(g => predictedPairs.has(`${String(g.homeTeam).toLowerCase()}__${String(g.awayTeam).toLowerCase()}`));
             console.log(`🎯 Filtered to ${midGame.length} live matches that we predicted`);
+          } else {
+            console.log('⚠️ No predicted matches found in Supabase, showing all live matches');
           }
         }
       }

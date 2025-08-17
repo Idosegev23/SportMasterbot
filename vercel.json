@@ -65,7 +65,7 @@
     ,
     {
       "path": "/api/cron/live-status",
-      "schedule": "*/5 * * * *"
+      "schedule": "*/10 * * * *"
     },
     {
       "path": "/api/cron/channel-stats",

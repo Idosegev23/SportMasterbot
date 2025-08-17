@@ -33,15 +33,20 @@ export default async function handler(req, res) {
     // Filter to only games we predicted/tracked today from Supabase
     try {
       const { supabase } = require('../../../lib/supabase');
+      console.log('🔍 Supabase connection status:', supabase ? 'Connected' : 'Not connected');
       if (supabase) {
+        console.log('🔍 Querying Supabase for predictions...');
         // Get matches from last 24 hours that we sent predictions for
         const { data: posts, error } = await supabase
           .from('telegram_posts')
-          .select('metadata')
+          .select('*')
           .eq('type', 'predictions')
           .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+        
+        console.log(`🔍 Supabase query result: ${posts?.length || 0} posts found, error:`, error?.message || 'none');
 
         if (!error && posts && posts.length > 0) {
+          console.log('🔍 Sample post structure:', JSON.stringify(posts[0], null, 2));
           const predictedPairs = new Set();
           posts.forEach(post => {
             if (post.metadata) {
@@ -67,12 +72,29 @@ export default async function handler(req, res) {
             midGame = midGame.filter(g => predictedPairs.has(`${String(g.homeTeam).toLowerCase()}__${String(g.awayTeam).toLowerCase()}`));
             console.log(`🎯 Filtered to ${midGame.length} live matches that we predicted`);
           } else {
-            console.log('⚠️ No predicted matches found in Supabase, showing all live matches');
+            console.log('⚠️ No predicted matches found in Supabase, fallback to top-tier leagues only');
+            // Fallback: filter to only top-tier leagues
+            const topLeagues = ['Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Ligue 1', 'Champions League', 'Europa League'];
+            midGame = midGame.filter(g => {
+              const competition = g.competition || g.league || '';
+              return topLeagues.some(league => competition.includes(league));
+            });
+            console.log(`🎯 Fallback: filtered to ${midGame.length} matches from top leagues`);
           }
         }
       }
     } catch (e) {
       console.log('⚠️ Error reading predicted matches from Supabase:', e.message);
+      console.log('🔍 Full error details:', JSON.stringify(e, null, 2));
+      
+      // Fallback: filter to only top-tier leagues
+      console.log('🔄 Applying error fallback: top-tier leagues only');
+      const topLeagues = ['Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Ligue 1', 'Champions League', 'Europa League'];
+      midGame = midGame.filter(g => {
+        const competition = g.competition || g.league || '';
+        return topLeagues.some(league => competition.includes(league));
+      });
+      console.log(`🎯 Error fallback: filtered to ${midGame.length} matches from top leagues`);
     }
     if (midGame.length === 0) {
       return res.status(200).json({ success: true, message: "No predicted mid-game matches (45-75')", liveCount: liveMatches.length, action: 'skipped' });

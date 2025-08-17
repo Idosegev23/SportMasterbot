@@ -30,17 +30,39 @@ export default async function handler(req, res) {
     // Focus around 60' (45-75)
     let midGame = liveMatches.filter(m => typeof m.minute === 'number' && m.minute >= 45 && m.minute <= 75);
 
-    // Filter to only games we predicted/tracked today
+    // Filter to only games we predicted/tracked today from Supabase
     try {
-      const { getDailySchedule } = require('../../../lib/storage');
-      const sched = await getDailySchedule();
-      if (sched && Array.isArray(sched.matches) && sched.matches.length) {
-        const predictedPairs = new Set(
-          sched.matches.map(x => `${(x.homeTeam?.name||x.homeTeam||'').toLowerCase()}__${(x.awayTeam?.name||x.awayTeam||'').toLowerCase()}`)
-        );
-        midGame = midGame.filter(g => predictedPairs.has(`${String(g.homeTeam).toLowerCase()}__${String(g.awayTeam).toLowerCase()}`));
+      const { supabase } = require('../../../lib/supabase');
+      if (supabase) {
+        // Get matches from last 24 hours that we sent predictions for
+        const { data: posts, error } = await supabase
+          .from('telegram_posts')
+          .select('metadata')
+          .eq('type', 'prediction')
+          .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+
+        if (!error && posts && posts.length > 0) {
+          const predictedPairs = new Set();
+          posts.forEach(post => {
+            if (post.metadata && post.metadata.matches) {
+              post.metadata.matches.forEach(match => {
+                if (match.homeTeam && match.awayTeam) {
+                  predictedPairs.add(`${match.homeTeam.toLowerCase()}__${match.awayTeam.toLowerCase()}`);
+                }
+              });
+            }
+          });
+          
+          if (predictedPairs.size > 0) {
+            console.log(`📋 Found ${predictedPairs.size} predicted matches in last 24h`);
+            midGame = midGame.filter(g => predictedPairs.has(`${String(g.homeTeam).toLowerCase()}__${String(g.awayTeam).toLowerCase()}`));
+            console.log(`🎯 Filtered to ${midGame.length} live matches that we predicted`);
+          }
+        }
       }
-    } catch (_) {}
+    } catch (e) {
+      console.log('⚠️ Error reading predicted matches from Supabase:', e.message);
+    }
     if (midGame.length === 0) {
       return res.status(200).json({ success: true, message: "No predicted mid-game matches (45-75')", liveCount: liveMatches.length, action: 'skipped' });
     }

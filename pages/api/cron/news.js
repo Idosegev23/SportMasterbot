@@ -11,13 +11,13 @@ export default async function handler(req, res) {
     const TelegramManager = require('../../../lib/telegram');
     const telegram = new TelegramManager();
     
-    // Fetch real news headlines from RSS feeds
+    // Fetch single detailed news article from RSS feeds
     const NewsFetcher = require('../../../lib/news-fetcher');
     const newsFetcher = new NewsFetcher();
-    const headlines = await newsFetcher.fetchLatestNews(5);
+    const newsData = await newsFetcher.fetchLatestNews(1);
     
     // Send news to channel
-    await telegram.sendNews(headlines);
+    await telegram.sendNews(newsData.content, newsData.originalItem);
     
     console.log('✅ News sent successfully via cron');
     res.status(200).json({ 

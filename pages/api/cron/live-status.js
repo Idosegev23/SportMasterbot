@@ -4,6 +4,9 @@ const FootballAPI = require('../../../lib/football-api');
 const ContentGenerator = require('../../../lib/content-generator');
 const TelegramManager = require('../../../lib/telegram');
 
+// Memory for last sent live updates to prevent spam
+let lastLiveUpdates = new Map(); // matchId -> { score, minute, lastUpdate }
+
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -100,8 +103,56 @@ export default async function handler(req, res) {
       return res.status(200).json({ success: true, message: "No predicted mid-game matches (45-75')", liveCount: liveMatches.length, action: 'skipped' });
     }
 
-    const content = await contentGenerator.generateLiveStatus(midGame);
-    const result = await telegram.sendLiveStatus(content, midGame);
+    // Filter matches that actually have changes since last update
+    const matchesWithChanges = midGame.filter(match => {
+      const matchId = match.fixture?.id || match.id || `${match.homeTeam?.name}-${match.awayTeam?.name}`;
+      const currentScore = `${match.homeScore || 0}-${match.awayScore || 0}`;
+      const currentMinute = match.minute || 0;
+      
+      const lastUpdate = lastLiveUpdates.get(matchId);
+      
+      // If no previous update, it's a change
+      if (!lastUpdate) {
+        lastLiveUpdates.set(matchId, {
+          score: currentScore,
+          minute: currentMinute,
+          lastUpdate: Date.now()
+        });
+        return true;
+      }
+      
+      // Check if score changed or significant minute change (5+ minutes)
+      const scoreChanged = lastUpdate.score !== currentScore;
+      const significantTimeChange = Math.abs(currentMinute - lastUpdate.minute) >= 5;
+      const timeSinceLastUpdate = Date.now() - lastUpdate.lastUpdate;
+      const minTimeBetweenUpdates = 15 * 60 * 1000; // 15 minutes minimum
+      
+      if (scoreChanged || (significantTimeChange && timeSinceLastUpdate > minTimeBetweenUpdates)) {
+        // Update memory
+        lastLiveUpdates.set(matchId, {
+          score: currentScore,
+          minute: currentMinute,
+          lastUpdate: Date.now()
+        });
+        return true;
+      }
+      
+      return false;
+    });
+
+    if (matchesWithChanges.length === 0) {
+      return res.status(200).json({ 
+        success: true, 
+        message: `No significant changes in ${midGame.length} live matches since last update`, 
+        action: 'skipped',
+        totalLive: midGame.length
+      });
+    }
+
+    console.log(`📊 Sending live updates for ${matchesWithChanges.length}/${midGame.length} matches with changes`);
+    
+    const content = await contentGenerator.generateLiveStatus(matchesWithChanges);
+    const result = await telegram.sendLiveStatus(content, matchesWithChanges);
 
     return res.status(200).json({
       success: true,

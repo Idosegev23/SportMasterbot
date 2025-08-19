@@ -60,7 +60,7 @@
     },
     {
       "path": "/api/cron/summary",
-      "schedule": "0 21 * * *"
+      "schedule": "0 7 * * *"
     }
     ,
     {

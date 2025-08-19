@@ -32,10 +32,32 @@ export default async function handler(req, res) {
     const footballAPI = new FootballAPI();
     const telegram = new TelegramManager();
 
-    // Data sources - collect ALL finished fixtures to rank top 5
-    const rawFinished = await footballAPI.getAllYesterdayFixturesRaw();
+    // Data sources - use filtered results instead of raw data
+    const yesterdayResults = await footballAPI.getYesterdayResults(); // Uses our filters!
     const cached = await getDailySchedule();
-    const todayMatches = cached?.matches || [];
+    let todayMatches = cached?.matches || [];
+    
+    // Fallback: if cache is empty, get live data  
+    if (todayMatches.length === 0) {
+      console.log('⚠️ Cache empty, fetching live today matches...');
+      try {
+        // First try all leagues ranked
+        todayMatches = await footballAPI.getAllTodayMatchesRanked();
+        console.log(`📊 Found ${todayMatches.length} matches from all leagues`);
+        
+        // If still empty, try popular leagues
+        if (todayMatches.length === 0) {
+          todayMatches = await footballAPI.getTodayMatches();
+          console.log(`📊 Found ${todayMatches.length} matches from popular leagues`);
+        }
+        
+        console.log(`✅ Live fallback successful: ${todayMatches.length} matches found`);
+      } catch (error) {
+        console.log('❌ Failed to fetch live matches:', error.message);
+      }
+    } else {
+      console.log(`✅ Using cached matches: ${todayMatches.length} found`);
+    }
 
     // Build concise summary content in English
     const etTime = new Date().toLocaleString('en-US', { timeZone: 'Africa/Addis_Ababa' });
@@ -44,45 +66,20 @@ export default async function handler(req, res) {
     lines.push('────────────────────');
     lines.push(`🕒 Time (ET): ${etTime}`);
     lines.push('');
-    // Rank and pick Top 5 finished matches
-    const scored = (rawFinished || [])
-      .filter(f => f.fixture?.status?.short === 'FT')
-      .map(f => ({
-        f,
-        score: (() => {
-          let s = 0;
-          const league = f.league?.name || '';
-          const leagueScores = {
-            'UEFA Champions League': 100,
-            'Premier League': 90,
-            'La Liga': 85,
-            'Serie A': 80,
-            'Bundesliga': 75,
-            'Ligue 1': 70
-          };
-          s += leagueScores[league] || 50;
-          const bigTeams = ['Real Madrid','Barcelona','Manchester City','Manchester United','Liverpool','Arsenal','Chelsea','Tottenham Hotspur','Bayern Munich','Borussia Dortmund','Paris Saint-Germain','Juventus','AC Milan','Inter Milan','Napoli','Atletico Madrid','PSG'];
-          const home = f.teams?.home?.name || '';
-          const away = f.teams?.away?.name || '';
-          if (bigTeams.some(t => home.includes(t))) s += 25;
-          if (bigTeams.some(t => away.includes(t))) s += 25;
-          if ((f.goals?.home ?? 0) + (f.goals?.away ?? 0) >= 4) s += 15;
-          return s;
-        })()
-      }))
-      .sort((a,b) => b.score - a.score)
-      .slice(0,5)
-      .map(x => x.f);
+    // Use already filtered and ranked yesterday results (no more U21 or obscure leagues!)
+    const scored = yesterdayResults.slice(0, 5); // Already filtered and ranked by importance
 
     lines.push(`✅ Yesterday Top 5 Results (ranked): ${scored.length}`);
     if (scored.length > 0) {
       const summaries = scored.map(r => {
-        const home = r.teams?.home?.name;
-        const away = r.teams?.away?.name;
-        const score = `${r.goals?.home ?? ''}-${r.goals?.away ?? ''}`;
-        const league = r.league?.name || '';
+        // Handle both API formats (from getYesterdayResults)
+        const home = r.homeTeam?.name || r.homeTeam || r.teams?.home?.name;
+        const away = r.awayTeam?.name || r.awayTeam || r.teams?.away?.name;
+        const homeScore = r.homeScore ?? r.goals?.home ?? '';
+        const awayScore = r.awayScore ?? r.goals?.away ?? '';
+        const league = r.competition?.name || r.league?.name || '';
         // Short one-liner summary
-        return `• ${home} ${score} ${away}${league ? ` — ${league}` : ''}`;
+        return `• ${home} ${homeScore}-${awayScore} ${away}${league ? ` — ${league}` : ''}`;
       });
       lines.push(...summaries);
     }

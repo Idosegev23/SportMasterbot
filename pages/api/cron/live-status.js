@@ -29,11 +29,54 @@ export default async function handler(req, res) {
     const contentGenerator = new ContentGenerator();
     const telegram = new TelegramManager();
 
-    const liveMatches = await footballAPI.getLiveMatches();
-    // Focus around 60' (45-75)
-    let midGame = liveMatches.filter(m => typeof m.minute === 'number' && m.minute >= 45 && m.minute <= 75);
+    const { getDailySchedule } = require('../../../lib/storage');
+    
+    // Get today's selected matches from daily schedule
+    let trackedMatches = [];
+    
+    try {
+      const dailySchedule = await getDailySchedule();
+      if (dailySchedule && dailySchedule.matches) {
+        trackedMatches = dailySchedule.matches;
+        console.log(`📋 Found ${trackedMatches.length} matches in today's daily schedule`);
+      } else {
+        console.log('⚠️ No daily schedule found');
+      }
+    } catch (e) {
+      console.log('⚠️ Error reading daily schedule:', e.message);
+    }
 
-    // Filter to only games we predicted/tracked today from Supabase
+    const allLiveMatches = await footballAPI.getLiveMatches();
+    console.log(`🔴 Total live matches: ${allLiveMatches.length}`);
+    
+    // Focus around 60' (45-75) and only on our scheduled matches
+    let midGame = allLiveMatches.filter(m => {
+      // First filter by time (around 60 minutes)
+      const isAroundSixtyMin = typeof m.minute === 'number' && m.minute >= 45 && m.minute <= 75;
+      if (!isAroundSixtyMin) return false;
+      
+      // Then filter to only our tracked matches
+      if (trackedMatches.length === 0) return true; // If no schedule, show all
+      
+      return trackedMatches.some(scheduledMatch => {
+        const schedHomeTeam = scheduledMatch.homeTeam?.name || scheduledMatch.homeTeam;
+        const schedAwayTeam = scheduledMatch.awayTeam?.name || scheduledMatch.awayTeam;
+        
+        // Exact or partial match
+        const homeMatches = m.homeTeam === schedHomeTeam || 
+                           m.homeTeam.includes(schedHomeTeam) || 
+                           schedHomeTeam.includes(m.homeTeam);
+        const awayMatches = m.awayTeam === schedAwayTeam || 
+                           m.awayTeam.includes(schedAwayTeam) || 
+                           schedAwayTeam.includes(m.awayTeam);
+        
+        return homeMatches && awayMatches;
+      });
+    });
+    
+    console.log(`🎯 Mid-game scheduled matches found: ${midGame.length}`);
+
+    // Filter to only games we predicted/tracked today
     try {
       const { supabase } = require('../../../lib/supabase');
       console.log('🔍 Supabase connection status:', supabase ? 'Connected' : 'Not connected');

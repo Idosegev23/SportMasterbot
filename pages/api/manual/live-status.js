@@ -30,52 +30,63 @@ export default async function handler(req, res) {
     const footballAPI = new FootballAPI();
     const contentGenerator = new ContentGenerator();
     const telegram = new TelegramManager();
+    const { getDailySchedule } = require('../../../lib/storage');
 
-    // Get tracked matches from Supabase (ones we sent predictions for)
-    const { supabase } = require('../../../lib/supabase');
-    let trackedMatches = {};
+    // Get today's selected matches from daily schedule
+    let trackedMatches = [];
     
     try {
-      // Get matches from last 24 hours that we sent predictions for
-      const { data: posts, error } = await supabase
-        .from('telegram_posts')
-        .select('*')
-        .eq('type', 'predictions')
-        .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      // Extract match info from metadata
-      posts.forEach(post => {
-        if (post.metadata && post.metadata.homeTeam && post.metadata.awayTeam) {
-          const matchKey = `${post.metadata.homeTeam}_vs_${post.metadata.awayTeam}`;
-          trackedMatches[matchKey] = post.metadata;
-        }
-      });
-
-      console.log(`📋 Found ${Object.keys(trackedMatches).length} tracked matches from predictions in last 24h`);
+      const dailySchedule = await getDailySchedule();
+      if (dailySchedule && dailySchedule.matches) {
+        trackedMatches = dailySchedule.matches;
+        console.log(`📋 Found ${trackedMatches.length} matches in today's daily schedule`);
+        trackedMatches.forEach(match => {
+          console.log(`   - ${match.homeTeam?.name || match.homeTeam} vs ${match.awayTeam?.name || match.awayTeam}`);
+        });
+      } else {
+        console.log('⚠️ No daily schedule found, will use all live matches');
+      }
     } catch (e) {
-      console.log('⚠️ Error reading tracked matches from Supabase:', e.message);
+      console.log('⚠️ Error reading daily schedule:', e.message);
     }
 
-    // Get all live matches and filter to only our tracked ones
+    // Get all live matches
     const allLiveMatches = await footballAPI.getLiveMatches();
-    let matchesForStatus = allLiveMatches.filter(match => {
-      // Try to match by team names
-      return Object.values(trackedMatches).some(tracked => 
-        (tracked.homeTeam === match.homeTeam && tracked.awayTeam === match.awayTeam) ||
-        (match.homeTeam.includes(tracked.homeTeam) || tracked.homeTeam.includes(match.homeTeam)) &&
-        (match.awayTeam.includes(tracked.awayTeam) || tracked.awayTeam.includes(match.awayTeam))
-      );
-    });
+    console.log(`🔴 Total live matches found: ${allLiveMatches.length}`);
+    
+    // Filter to only matches from our daily schedule
+    let matchesForStatus = [];
+    
+    if (trackedMatches.length > 0) {
+      matchesForStatus = allLiveMatches.filter(liveMatch => {
+        // Try to match by team names with the daily schedule matches
+        return trackedMatches.some(scheduledMatch => {
+          const schedHomeTeam = scheduledMatch.homeTeam?.name || scheduledMatch.homeTeam;
+          const schedAwayTeam = scheduledMatch.awayTeam?.name || scheduledMatch.awayTeam;
+          
+          // Exact match
+          if (liveMatch.homeTeam === schedHomeTeam && liveMatch.awayTeam === schedAwayTeam) {
+            return true;
+          }
+          
+          // Partial match (team names can vary slightly)
+          const homeMatches = liveMatch.homeTeam.includes(schedHomeTeam) || schedHomeTeam.includes(liveMatch.homeTeam);
+          const awayMatches = liveMatch.awayTeam.includes(schedAwayTeam) || schedAwayTeam.includes(liveMatch.awayTeam);
+          
+          return homeMatches && awayMatches;
+        });
+      });
+      
+      console.log(`🎯 Found ${matchesForStatus.length} of our scheduled matches currently live`);
+      matchesForStatus.forEach(match => {
+        console.log(`   🔴 LIVE: ${match.homeTeam} vs ${match.awayTeam} (${match.minute}')`);
+      });
+    }
 
-    // If no tracked matches are live, fall back to all live matches
+    // If no tracked matches are live, fall back to all live matches from popular leagues
     if (matchesForStatus.length === 0) {
-      console.log('⚠️ No tracked matches currently live, showing all live matches');
-      matchesForStatus = allLiveMatches;
-    } else {
-      console.log(`🎯 Found ${matchesForStatus.length} of our predicted matches currently live`);
+      console.log('⚠️ No scheduled matches currently live, showing popular live matches');
+      matchesForStatus = allLiveMatches.slice(0, 3); // Top 3 live matches
     }
 
     const content = await contentGenerator.generateLiveStatus(matchesForStatus);

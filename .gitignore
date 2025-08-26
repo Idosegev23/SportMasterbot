@@ -76,3 +76,4 @@ coverage/
 .com.apple.timemachine.donotpresent.env*
 *.env
 .env*.local
+node_modules/

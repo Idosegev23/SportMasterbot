@@ -64,7 +64,7 @@ export default async function handler(req, res) {
     const lines = [];
     lines.push('📋 DAILY SUMMARY');
     lines.push('────────────────────');
-    lines.push(`🕒 Time (ET): ${etTime}`);
+    lines.push(`🕒 Time: ${etTime}`);
     lines.push('');
     // Use already filtered and ranked yesterday results (no more U21 or obscure leagues!)
     const scored = yesterdayResults.slice(0, 5); // Already filtered and ranked by importance
@@ -91,7 +91,7 @@ export default async function handler(req, res) {
         const away = m.awayTeam?.name || m.awayTeam;
         const league = m.competition?.name || m.league?.name || '';
         const t = m.kickoffTime ? new Date(m.kickoffTime).toLocaleTimeString('en-US', { timeZone: 'Africa/Addis_Ababa', hour: '2-digit', minute: '2-digit' }) : '';
-        return `• ${home} vs ${away}${league ? ` (${league})` : ''}${t ? ` — ${t} ET` : ''}`;
+        return `• ${home} vs ${away}${league ? ` (${league})` : ''}${t ? ` — ${t}` : ''}`;
       });
       lines.push(...topMx);
       if (todayMatches.length > 3) lines.push(`… and ${todayMatches.length - 3} more`);

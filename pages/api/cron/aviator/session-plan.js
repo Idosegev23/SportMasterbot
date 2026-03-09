@@ -9,23 +9,38 @@ export default async function handler(req, res) {
   }
 
   try {
-    console.log('✈️ Cron: Aviator session plan...');
+    console.log('✈️ Cron: Aviator session plan for all channels...');
     const ContentGenerator = require('../../../../lib/content-generator');
     const TelegramManager = require('../../../../lib/telegram');
-    const { getEffectiveCoupon } = require('../../../../lib/settings-store');
+    const { getActiveChannels } = require('../../../../lib/channel-config');
 
-    const contentGen = new ContentGenerator();
-    const telegram = new TelegramManager();
-    const coupon = await getEffectiveCoupon(true);
-    const code = coupon?.code || 'SM100';
+    const channels = await getActiveChannels();
+    const results = [];
 
-    const content = await contentGen.generateAviatorSessionPlan(code);
-    const result = await telegram.sendAviator(content, 'session', code);
+    for (const ch of channels) {
+      try {
+        const cg = new ContentGenerator({
+          language: ch.language || 'en',
+          timezone: ch.timezone || 'Africa/Addis_Ababa',
+        });
+        const telegram = new TelegramManager();
+        const code = ch.coupon_code || 'SM100';
+        const content = await cg.generateAviatorSessionPlan(code);
+        const result = await telegram.sendAviator(content, 'session', code, ch);
+        results.push({ channel: ch.channel_id, success: true, messageId: result?.message_id });
+      } catch (err) {
+        results.push({ channel: ch.channel_id, success: false, error: err.message });
+        console.error(`❌ Aviator session failed for ${ch.channel_id}:`, err.message);
+      }
+    }
 
-    return res.status(200).json({ success: true, type: 'aviator-session-plan', messageId: result?.message_id || null });
+    return res.status(200).json({
+      success: true,
+      message: `Aviator session sent to ${results.filter(r => r.success).length}/${channels.length} channels`,
+      results
+    });
   } catch (error) {
     console.error('❌ Cron aviator session-plan error:', error);
     return res.status(500).json({ success: false, error: error.message });
   }
 }
-

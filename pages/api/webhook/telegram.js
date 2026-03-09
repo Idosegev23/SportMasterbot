@@ -215,15 +215,16 @@ export default async function handler(req, res) {
       } else if (text.startsWith('/mystats')) {
         await botInstance.handleMyStats(msg);
       }
-      // Admin commands — /start and /menu
+      // Admin/Owner commands — check admin first, fallback to owner
       else if (text.startsWith('/menu')) {
-        if (botInstance.checkAdminAccess(msg)) {
+        const authorized = botInstance.checkAdminAccess(msg) || await botInstance.isAuthorized(msg.from.id);
+        if (authorized) {
           try { await recordInteraction(msg, 'command', { text }); } catch (_) {}
           await botInstance.showMainMenu(msg.chat.id);
         }
       } else if (text.startsWith('/start')) {
-        // Admin /start shows menu, public /start shows consent
-        if (botInstance.checkAdminAccess(msg)) {
+        const authorized = botInstance.checkAdminAccess(msg) || await botInstance.isAuthorized(msg.from.id);
+        if (authorized) {
           try { await recordInteraction(msg, 'command', { text }); } catch (_) {}
           await botInstance.showMainMenu(msg.chat.id);
         } else {
@@ -237,59 +238,60 @@ export default async function handler(req, res) {
           );
         }
       } else if (text.startsWith('/predictions')) {
-        if (botInstance.checkAdminAccess(msg)) {
+        if (botInstance.checkAdminAccess(msg) || await botInstance.isAuthorized(msg.from.id)) {
           try { await recordInteraction(msg, 'command', { text }); } catch (_) {}
           await botInstance.handlePredictionsCommand(msg);
         }
       } else if (text.startsWith('/promo')) {
-        if (botInstance.checkAdminAccess(msg)) {
+        if (botInstance.checkAdminAccess(msg) || await botInstance.isAuthorized(msg.from.id)) {
           try { await recordInteraction(msg, 'command', { text }); } catch (_) {}
           await botInstance.handlePromoCommand(msg);
         }
       } else if (text.startsWith('/results')) {
-        if (botInstance.checkAdminAccess(msg)) {
+        if (botInstance.checkAdminAccess(msg) || await botInstance.isAuthorized(msg.from.id)) {
           try { await recordInteraction(msg, 'command', { text }); } catch (_) {}
           await botInstance.handleResultsCommand(msg);
         }
       } else if (text.startsWith('/summary')) {
-        if (botInstance.checkAdminAccess(msg)) {
+        if (botInstance.checkAdminAccess(msg) || await botInstance.isAuthorized(msg.from.id)) {
           try { await recordInteraction(msg, 'command', { text }); } catch (_) {}
           await botInstance.handleSummaryCommand(msg);
         }
       } else if (text.startsWith('/status')) {
-        if (botInstance.checkAdminAccess(msg)) {
+        if (botInstance.checkAdminAccess(msg) || await botInstance.isAuthorized(msg.from.id)) {
           try { await recordInteraction(msg, 'command', { text }); } catch (_) {}
           await botInstance.handleStatusCommand(msg);
         }
       } else if (text.startsWith('/today')) {
-        if (botInstance.checkAdminAccess(msg)) {
+        if (botInstance.checkAdminAccess(msg) || await botInstance.isAuthorized(msg.from.id)) {
           try { await recordInteraction(msg, 'command', { text }); } catch (_) {}
           await botInstance.handleTodayCommand(msg);
         }
       } else if (text.startsWith('/live')) {
-        if (botInstance.checkAdminAccess(msg)) {
+        if (botInstance.checkAdminAccess(msg) || await botInstance.isAuthorized(msg.from.id)) {
           try { await recordInteraction(msg, 'command', { text }); } catch (_) {}
           await botInstance.handleLiveCommand(msg);
         }
       } else if (text.startsWith('/help')) {
-        if (botInstance.checkAdminAccess(msg)) {
+        if (botInstance.checkAdminAccess(msg) || await botInstance.isAuthorized(msg.from.id)) {
           try { await recordInteraction(msg, 'command', { text }); } catch (_) {}
           await botInstance.handleHelpCommand(msg);
         }
       } else if (text.startsWith('/analytics')) {
-        if (botInstance.checkAdminAccess(msg)) {
+        if (botInstance.checkAdminAccess(msg) || await botInstance.isAuthorized(msg.from.id)) {
           try { await recordInteraction(msg, 'command', { text }); } catch (_) {}
           await botInstance.handleAnalyticsCommand(msg);
         }
       } else if (text.startsWith('/buttons')) {
-        if (botInstance.checkAdminAccess(msg)) {
+        if (botInstance.checkAdminAccess(msg) || await botInstance.isAuthorized(msg.from.id)) {
           await botInstance.startButtonsWizard(msg.chat.id, msg.message_id || update.message.message_id);
         }
       } else if (text.startsWith('/coupon')) {
-        if (botInstance.checkAdminAccess(msg)) {
+        if (botInstance.checkAdminAccess(msg) || await botInstance.isAuthorized(msg.from.id)) {
           await botInstance.startCouponWizard(msg.chat.id, msg.message_id || update.message.message_id);
         }
       } else if (text.startsWith('/emergency_stop') || text.startsWith('/stop')) {
+        // Emergency stop is admin-only
         if (botInstance.checkAdminAccess(msg)) {
           await botInstance.emergencyStop(msg.chat.id);
         }
@@ -594,21 +596,26 @@ export default async function handler(req, res) {
             await botInstance.emergencyStop(chatId);
             break;
 
-          // Promo send path
+          // Promo send path — channel-aware
           case 'promo:send:with_buttons':
           case 'promo:send:text_only':
             try {
               const pending = botInstance._pendingPromo?.get(chatId);
-              const baseUrl = pending?.baseUrl || (process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'https://sportmasterbot-ccv2r9g0q-idosegev23s-projects.vercel.app'));
-              const resp = await axios.post(`${baseUrl}/api/manual/promo`, { withButtons: action.endsWith('with_buttons') }, { headers: { 'Content-Type': 'application/json', 'x-bot-internal': 'true' }, timeout: 60000 });
+              const baseUrl = pending?.baseUrl || botInstance.getBaseUrl();
+              const promoChannelId = pending?.channelId;
+              const resp = await axios.post(`${baseUrl}/api/manual/promo`, {
+                withButtons: action.endsWith('with_buttons'),
+                channelId: promoChannelId
+              }, { headers: { 'Content-Type': 'application/json', 'x-bot-internal': 'true' }, timeout: 60000 });
               botInstance._pendingPromo?.delete(chatId);
+              const targetCh = promoChannelId || process.env.CHANNEL_ID;
               if (resp.data.success) {
-                await botInstance.bot.sendMessage(chatId, '✅ Promo sent successfully!', { parse_mode: 'HTML' });
+                await botInstance.bot.sendMessage(chatId, `✅ Promo sent to <b>${targetCh}</b>!`, { parse_mode: 'HTML' });
               } else {
-                await botInstance.bot.sendMessage(chatId, '❌ Failed to send promo: ' + (resp.data.message || 'Unknown error'));
+                await botInstance.bot.sendMessage(chatId, '❌ ' + (resp.data.message || 'Unknown error'));
               }
             } catch (e) {
-              await botInstance.bot.sendMessage(chatId, '❌ Failed to send promo: ' + e.message);
+              await botInstance.bot.sendMessage(chatId, '❌ Failed: ' + e.message);
             }
             break;
 

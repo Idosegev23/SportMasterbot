@@ -31,6 +31,12 @@ export default async function handler(req, res) {
 
     const footballAPI = new FootballAPI();
     const telegram = new TelegramManager();
+    const { getChannel } = require('../../../lib/channel-config');
+
+    // Resolve channel config if channelId provided
+    const requestedChannelId = req.body?.channelId;
+    const channelConfig = requestedChannelId ? await getChannel(requestedChannelId) : null;
+    const targetChannel = channelConfig?.channel_id || telegram.channelId;
 
     // Data sources - use filtered results instead of raw data
     const yesterdayResults = await footballAPI.getYesterdayResults(); // Uses our filters!
@@ -129,19 +135,19 @@ export default async function handler(req, res) {
       }));
       const imageBuffer = await imgGen.generateResultsImage(imgInput);
       if (imageBuffer) {
-        const keyboard = await telegram.createResultsKeyboard();
-        const message = await telegram.bot.sendPhoto(telegram.channelId, imageBuffer, {
+        const keyboard = await telegram.buildKeyboard(channelConfig, 'results');
+        const message = await telegram.bot.sendPhoto(targetChannel, imageBuffer, {
           caption: content,
           parse_mode: 'HTML',
           reply_markup: { inline_keyboard: keyboard }
         });
         sent = message;
-        try { await telegram.logPostToSupabase('summary', content, message?.message_id); } catch (_) {}
+        try { await telegram.logPostToSupabase('summary', content, message?.message_id, {}, channelConfig); } catch (_) {}
       }
     } catch (e) { console.log('⚠️ Summary image generation failed:', e.message); }
 
-    const message = sent || await telegram.sendSummary(content);
-    try { await telegram.logPostToSupabase('summary', content, message?.message_id); } catch (_) {}
+    const message = sent || await telegram.sendSummary(content, channelConfig);
+    try { await telegram.logPostToSupabase('summary', content, message?.message_id, {}, channelConfig); } catch (_) {}
     await markCooldown(cdKey);
     await releaseLock('summary-run');
 

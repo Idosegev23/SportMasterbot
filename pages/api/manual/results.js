@@ -21,7 +21,16 @@ export default async function handler(req, res) {
     );
 
     const footballAPI = new FootballAPI();
-    const contentGenerator = new ContentGenerator();
+    const { getChannel } = require('../../../lib/channel-config');
+
+    // Resolve channel config if channelId provided
+    const requestedChannelId = req.body?.channelId;
+    const channelConfig = requestedChannelId ? await getChannel(requestedChannelId) : null;
+
+    const contentGenerator = new ContentGenerator({
+      language: channelConfig?.language || 'en',
+      timezone: channelConfig?.timezone || 'Africa/Addis_Ababa',
+    });
     const telegram = new TelegramManager();
 
     // Get yesterday's results with optional fallback
@@ -54,9 +63,9 @@ export default async function handler(req, res) {
       });
     }
 
-    // Otherwise send to Telegram
-    const result = await telegram.sendResults(resultsContent, results);
-    try { await telegram.logPostToSupabase('results', resultsContent, result?.message_id); } catch (_) {}
+    // Otherwise send to Telegram (channel-aware)
+    const result = await telegram.sendResults(resultsContent, results, channelConfig);
+    try { await telegram.logPostToSupabase('results', resultsContent, result?.message_id, {}, channelConfig); } catch (_) {}
 
     res.json({
       success: true,

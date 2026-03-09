@@ -10,17 +10,22 @@ export default async function handler(req, res) {
 
   try {
     const TelegramManager = require('../../../lib/telegram');
+    const { getChannel } = require('../../../lib/channel-config');
     const telegram = new TelegramManager();
 
+    // Resolve channel config if channelId provided
+    const requestedChannelId = req.body?.channelId;
+    const channelConfig = requestedChannelId ? await getChannel(requestedChannelId) : null;
+    const targetChannel = channelConfig?.channel_id || telegram.channelId;
+
     const withButtons = Boolean(req.body?.withButtons);
-    // Send promo using existing system; if text-only requested, send without image/keyboard
     let result;
     if (withButtons === false) {
       const content = '🎁 Special Offer!\n\nUse code now in the bot.';
-      result = await telegram.bot.sendMessage(telegram.channelId, content, { parse_mode: 'HTML', disable_web_page_preview: true, reply_markup: { inline_keyboard: [[{ text: '👤 Get Personal Coupons', url: 'https://t.me/Sportmsterbot?start=join_personal' }]] } });
-      await telegram.logPostToSupabase('promo', content, result?.message_id);
+      result = await telegram.bot.sendMessage(targetChannel, content, { parse_mode: 'HTML', disable_web_page_preview: true, reply_markup: { inline_keyboard: [[{ text: '👤 Get Personal Coupons', url: 'https://t.me/Sportmsterbot?start=join_personal' }]] } });
+      await telegram.logPostToSupabase('promo', content, result?.message_id, {}, channelConfig);
     } else {
-      result = await telegram.executePromoCommand('football');
+      result = await telegram.executePromoCommand('football', channelConfig);
     }
 
     res.json({

@@ -24,7 +24,16 @@ export default async function handler(req, res) {
 
     const footballAPI = new FootballAPI();
     const { getDailySchedule } = require('../../../lib/storage');
-    const contentGenerator = new ContentGenerator();
+    const { getChannel } = require('../../../lib/channel-config');
+
+    // Resolve channel config if channelId provided
+    const requestedChannelId = req.body?.channelId;
+    const channelConfig = requestedChannelId ? await getChannel(requestedChannelId) : null;
+
+    const contentGenerator = new ContentGenerator({
+      language: channelConfig?.language || 'en',
+      timezone: channelConfig?.timezone || 'Africa/Addis_Ababa',
+    });
     const telegram = new TelegramManager();
 
     // Global cooldown to prevent channel flooding (e.g., 15 minutes)
@@ -113,8 +122,8 @@ export default async function handler(req, res) {
       });
     }
 
-    // Otherwise send to Telegram
-    const result = await telegram.sendPredictions([prediction], [nextMatch]);
+    // Otherwise send to Telegram (channel-aware)
+    const result = await telegram.sendPredictions([prediction], [nextMatch], channelConfig);
     
     // Track this match for live updates
     const fs = require('fs');

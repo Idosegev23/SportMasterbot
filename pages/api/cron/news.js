@@ -16,12 +16,20 @@ export default async function handler(req, res) {
     const newsFetcher = new NewsFetcher();
     const newsData = await newsFetcher.fetchLatestNews(1);
 
+    // Handle all possible return types from fetchLatestNews
+    const content = typeof newsData === 'string' ? newsData : newsData?.content;
+    const originalItem = newsData?.originalItem || null;
+
+    if (!content) {
+      return res.status(200).json({ success: true, message: 'No news content available', action: 'skipped' });
+    }
+
     const channels = await getActiveChannels();
     const results = [];
 
     for (const ch of channels) {
       try {
-        await telegram.sendNews(newsData.content, newsData.originalItem, ch);
+        await telegram.sendNews(content, originalItem, ch);
         results.push({ channel: ch.channel_id, success: true });
         console.log(`✅ News sent to ${ch.channel_id}`);
       } catch (err) {

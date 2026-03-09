@@ -198,20 +198,44 @@ export default async function handler(req, res) {
       }
 
       // Process commands directly instead of emitting events
-      if (text.startsWith('/start') || text.startsWith('/menu')) {
+      // Owner commands (no admin check — identified by owner_user_id in channels table)
+      if (text.startsWith('/mychannel')) {
+        await botInstance.handleMyChannel(msg);
+      } else if (text.startsWith('/setcoupon')) {
+        const arg = text.replace(/^\/setcoupon\s*/, '').trim() || undefined;
+        await botInstance.handleSetCoupon(msg, arg);
+      } else if (text.startsWith('/setbonus')) {
+        const arg = text.replace(/^\/setbonus\s*/, '').trim() || undefined;
+        await botInstance.handleSetBonus(msg, arg);
+      } else if (text.startsWith('/setlanguage')) {
+        const arg = text.replace(/^\/setlanguage\s*/, '').trim() || undefined;
+        await botInstance.handleSetLanguage(msg, arg);
+      } else if (text.startsWith('/mylink')) {
+        await botInstance.handleMyLink(msg);
+      } else if (text.startsWith('/mystats')) {
+        await botInstance.handleMyStats(msg);
+      }
+      // Admin commands — /start and /menu
+      else if (text.startsWith('/menu')) {
         if (botInstance.checkAdminAccess(msg)) {
           try { await recordInteraction(msg, 'command', { text }); } catch (_) {}
           await botInstance.showMainMenu(msg.chat.id);
         }
       } else if (text.startsWith('/start')) {
-        // Public /start without join – invite to join
-        const channelId = process.env.CHANNEL_DB_UUID || process.env.SUPABASE_DEFAULT_CHANNEL_ID || process.env.CHANNEL_ID;
-        await upsertUserFromMsg(msg, false, channelId);
-        await recordInteraction(msg, 'start', {});
-        await botInstance.bot.sendMessage(msg.chat.id,
-          '👋 Welcome!\n\nTap to allow personalized coupons and updates:',
-          { reply_markup: { inline_keyboard: [[{ text: '✅ Allow', callback_data: 'public:consent' }]] } }
-        );
+        // Admin /start shows menu, public /start shows consent
+        if (botInstance.checkAdminAccess(msg)) {
+          try { await recordInteraction(msg, 'command', { text }); } catch (_) {}
+          await botInstance.showMainMenu(msg.chat.id);
+        } else {
+          // Public /start — invite to join
+          const channelId = process.env.CHANNEL_DB_UUID || process.env.SUPABASE_DEFAULT_CHANNEL_ID || process.env.CHANNEL_ID;
+          await upsertUserFromMsg(msg, false, channelId);
+          await recordInteraction(msg, 'start', {});
+          await botInstance.bot.sendMessage(msg.chat.id,
+            '👋 Welcome!\n\nTap to allow personalized coupons and updates:',
+            { reply_markup: { inline_keyboard: [[{ text: '✅ Allow', callback_data: 'public:consent' }]] } }
+          );
+        }
       } else if (text.startsWith('/predictions')) {
         if (botInstance.checkAdminAccess(msg)) {
           try { await recordInteraction(msg, 'command', { text }); } catch (_) {}

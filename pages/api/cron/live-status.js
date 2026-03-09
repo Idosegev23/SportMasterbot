@@ -1,16 +1,13 @@
-// Cron: Live Status around 60' minute
+// Cron: Live Status around 60' minute — Multi-Channel
 
 const FootballAPI = require('../../../lib/football-api');
 const ContentGenerator = require('../../../lib/content-generator');
 const TelegramManager = require('../../../lib/telegram');
 
-// Memory for last sent live updates to prevent spam
-let lastLiveUpdates = new Map(); // matchId -> { score, minute, lastUpdate }
+let lastLiveUpdates = new Map();
 
 export default async function handler(req, res) {
-  if (req.method !== 'GET') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+  if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
   const authHeader = req.headers.authorization;
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -18,194 +15,131 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Ethiopian time gating: only between 14:00-23:00 to catch most leagues
     const ethiopianTime = new Date().toLocaleString('en-US', { timeZone: 'Africa/Addis_Ababa' });
     const currentHour = new Date(ethiopianTime).getHours();
     if (currentHour < 12 || currentHour > 23) {
-      return res.status(200).json({ success: true, message: 'Outside live status window', hour: currentHour, action: 'skipped' });
+      return res.status(200).json({ success: true, message: 'Outside live status window', action: 'skipped' });
     }
 
+    const { getActiveChannels } = require('../../../lib/channel-config');
     const footballAPI = new FootballAPI();
-    const contentGenerator = new ContentGenerator();
     const telegram = new TelegramManager();
-
-    const { getDailySchedule } = require('../../../lib/storage');
-    
-    // Get today's selected matches from daily schedule
-    let trackedMatches = [];
-    
-    try {
-      const dailySchedule = await getDailySchedule();
-      if (dailySchedule && dailySchedule.matches) {
-        trackedMatches = dailySchedule.matches;
-        console.log(`📋 Found ${trackedMatches.length} matches in today's daily schedule`);
-      } else {
-        console.log('⚠️ No daily schedule found');
-      }
-    } catch (e) {
-      console.log('⚠️ Error reading daily schedule:', e.message);
-    }
 
     const allLiveMatches = await footballAPI.getLiveMatches();
     console.log(`🔴 Total live matches: ${allLiveMatches.length}`);
-    
-    // Focus around 60' (45-75) and only on our scheduled matches
+
+    if (allLiveMatches.length === 0) {
+      return res.status(200).json({ success: true, message: 'No live matches', action: 'skipped' });
+    }
+
+    // Get tracked matches from daily schedule
+    let trackedMatches = [];
+    try {
+      const { getDailySchedule } = require('../../../lib/storage');
+      const dailySchedule = await getDailySchedule();
+      if (dailySchedule?.matches) trackedMatches = dailySchedule.matches;
+    } catch (_) {}
+
+    // Filter to mid-game (45-75') and tracked matches
     let midGame = allLiveMatches.filter(m => {
-      // First filter by time (around 60 minutes)
-      const isAroundSixtyMin = typeof m.minute === 'number' && m.minute >= 45 && m.minute <= 75;
-      if (!isAroundSixtyMin) return false;
-      
-      // Then filter to only our tracked matches
-      if (trackedMatches.length === 0) return true; // If no schedule, show all
-      
-      return trackedMatches.some(scheduledMatch => {
-        const schedHomeTeam = scheduledMatch.homeTeam?.name || scheduledMatch.homeTeam;
-        const schedAwayTeam = scheduledMatch.awayTeam?.name || scheduledMatch.awayTeam;
-        
-        // Exact or partial match
-        const homeMatches = m.homeTeam === schedHomeTeam || 
-                           m.homeTeam.includes(schedHomeTeam) || 
-                           schedHomeTeam.includes(m.homeTeam);
-        const awayMatches = m.awayTeam === schedAwayTeam || 
-                           m.awayTeam.includes(schedAwayTeam) || 
-                           schedAwayTeam.includes(m.awayTeam);
-        
-        return homeMatches && awayMatches;
+      const isAround60 = typeof m.minute === 'number' && m.minute >= 45 && m.minute <= 75;
+      if (!isAround60) return false;
+      if (trackedMatches.length === 0) return true;
+      return trackedMatches.some(sm => {
+        const sh = sm.homeTeam?.name || sm.homeTeam;
+        const sa = sm.awayTeam?.name || sm.awayTeam;
+        return (m.homeTeam === sh || m.homeTeam.includes(sh) || sh.includes(m.homeTeam)) &&
+               (m.awayTeam === sa || m.awayTeam.includes(sa) || sa.includes(m.awayTeam));
       });
     });
-    
-    console.log(`🎯 Mid-game scheduled matches found: ${midGame.length}`);
 
-    // Filter to only games we predicted/tracked today
+    // Filter to predicted matches via Supabase
     try {
       const { supabase } = require('../../../lib/supabase');
-      console.log('🔍 Supabase connection status:', supabase ? 'Connected' : 'Not connected');
       if (supabase) {
-        console.log('🔍 Querying Supabase for predictions...');
-        // Get matches from last 24 hours that we sent predictions for
         const { data: posts, error } = await supabase
-          .from('telegram_posts')
-          .select('*')
-          .eq('type', 'predictions')
-          .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
-        
-        console.log(`🔍 Supabase query result: ${posts?.length || 0} posts found, error:`, error?.message || 'none');
+          .from('telegram_posts').select('metadata').eq('type', 'predictions')
+          .gte('created_at', new Date(Date.now() - 24 * 3600000).toISOString());
 
-        if (!error && posts && posts.length > 0) {
-          console.log('🔍 Sample post structure:', JSON.stringify(posts[0], null, 2));
+        if (!error && posts?.length > 0) {
           const predictedPairs = new Set();
           posts.forEach(post => {
-            if (post.metadata) {
-              // Check if it's a single match metadata (new format)
-              if (post.metadata.homeTeam && post.metadata.awayTeam) {
-                predictedPairs.add(`${post.metadata.homeTeam.toLowerCase()}__${post.metadata.awayTeam.toLowerCase()}`);
-              }
-              // Check if it's an array of matches (old format)
-              else if (post.metadata.matches) {
-                post.metadata.matches.forEach(match => {
-                  if (match.homeTeam && match.awayTeam) {
-                    predictedPairs.add(`${match.homeTeam.toLowerCase()}__${match.awayTeam.toLowerCase()}`);
-                  }
-                });
-              }
+            if (post.metadata?.homeTeam && post.metadata?.awayTeam) {
+              predictedPairs.add(`${post.metadata.homeTeam.toLowerCase()}__${post.metadata.awayTeam.toLowerCase()}`);
+            } else if (post.metadata?.matches) {
+              post.metadata.matches.forEach(m => {
+                if (m.homeTeam && m.awayTeam) predictedPairs.add(`${m.homeTeam.toLowerCase()}__${m.awayTeam.toLowerCase()}`);
+              });
             }
           });
-          
           if (predictedPairs.size > 0) {
-            console.log(`📋 Found ${predictedPairs.size} predicted matches in last 24h`);
-            console.log('🔍 Predicted pairs:', Array.from(predictedPairs));
-            console.log('🔍 Live matches before filter:', midGame.map(g => `${String(g.homeTeam).toLowerCase()}__${String(g.awayTeam).toLowerCase()}`));
             midGame = midGame.filter(g => predictedPairs.has(`${String(g.homeTeam).toLowerCase()}__${String(g.awayTeam).toLowerCase()}`));
-            console.log(`🎯 Filtered to ${midGame.length} live matches that we predicted`);
-          } else {
-            console.log('⚠️ No predicted matches found in Supabase, fallback to top-tier leagues only');
-            // Fallback: filter to only top-tier leagues
-            const topLeagues = ['Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Ligue 1', 'Champions League', 'Europa League'];
-            midGame = midGame.filter(g => {
-              const competition = g.competition || g.league || '';
-              return topLeagues.some(league => competition.includes(league));
-            });
-            console.log(`🎯 Fallback: filtered to ${midGame.length} matches from top leagues`);
           }
         }
       }
-    } catch (e) {
-      console.log('⚠️ Error reading predicted matches from Supabase:', e.message);
-      console.log('🔍 Full error details:', JSON.stringify(e, null, 2));
-      
-      // Fallback: filter to only top-tier leagues
-      console.log('🔄 Applying error fallback: top-tier leagues only');
+    } catch (_) {
       const topLeagues = ['Premier League', 'La Liga', 'Serie A', 'Bundesliga', 'Ligue 1', 'Champions League', 'Europa League'];
-      midGame = midGame.filter(g => {
-        const competition = g.competition || g.league || '';
-        return topLeagues.some(league => competition.includes(league));
-      });
-      console.log(`🎯 Error fallback: filtered to ${midGame.length} matches from top leagues`);
-    }
-    if (midGame.length === 0) {
-      return res.status(200).json({ success: true, message: "No predicted mid-game matches (45-75')", liveCount: liveMatches.length, action: 'skipped' });
+      midGame = midGame.filter(g => topLeagues.some(l => (g.competition || '').includes(l)));
     }
 
-    // Filter matches that actually have changes since last update
+    if (midGame.length === 0) {
+      return res.status(200).json({ success: true, message: "No predicted mid-game matches (45-75')", action: 'skipped' });
+    }
+
+    // Filter to matches with actual changes
     const matchesWithChanges = midGame.filter(match => {
-      const matchId = match.fixture?.id || match.id || `${match.homeTeam?.name}-${match.awayTeam?.name}`;
+      const matchId = match.fixture?.id || match.id || `${match.homeTeam}-${match.awayTeam}`;
       const currentScore = `${match.homeScore || 0}-${match.awayScore || 0}`;
       const currentMinute = match.minute || 0;
-      
       const lastUpdate = lastLiveUpdates.get(matchId);
-      
-      // If no previous update, it's a change
+
       if (!lastUpdate) {
-        lastLiveUpdates.set(matchId, {
-          score: currentScore,
-          minute: currentMinute,
-          lastUpdate: Date.now()
-        });
+        lastLiveUpdates.set(matchId, { score: currentScore, minute: currentMinute, lastUpdate: Date.now() });
         return true;
       }
-      
-      // Check if score changed or significant minute change (5+ minutes)
+
       const scoreChanged = lastUpdate.score !== currentScore;
-      const significantTimeChange = Math.abs(currentMinute - lastUpdate.minute) >= 5;
-      const timeSinceLastUpdate = Date.now() - lastUpdate.lastUpdate;
-      const minTimeBetweenUpdates = 15 * 60 * 1000; // 15 minutes minimum
-      
-      if (scoreChanged || (significantTimeChange && timeSinceLastUpdate > minTimeBetweenUpdates)) {
-        // Update memory
-        lastLiveUpdates.set(matchId, {
-          score: currentScore,
-          minute: currentMinute,
-          lastUpdate: Date.now()
-        });
+      const significantTime = Math.abs(currentMinute - lastUpdate.minute) >= 5;
+      const timeSince = Date.now() - lastUpdate.lastUpdate;
+
+      if (scoreChanged || (significantTime && timeSince > 15 * 60 * 1000)) {
+        lastLiveUpdates.set(matchId, { score: currentScore, minute: currentMinute, lastUpdate: Date.now() });
         return true;
       }
-      
       return false;
     });
 
     if (matchesWithChanges.length === 0) {
-      return res.status(200).json({ 
-        success: true, 
-        message: `No significant changes in ${midGame.length} live matches since last update`, 
-        action: 'skipped',
-        totalLive: midGame.length
-      });
+      return res.status(200).json({ success: true, message: 'No significant changes', action: 'skipped' });
     }
 
-    console.log(`📊 Sending live updates for ${matchesWithChanges.length}/${midGame.length} matches with changes`);
-    
-    const content = await contentGenerator.generateLiveStatus(matchesWithChanges);
-    const result = await telegram.sendLiveStatus(content, matchesWithChanges);
+    // Send to all channels
+    const channels = await getActiveChannels();
+    const channelResults = [];
+
+    for (const ch of channels) {
+      try {
+        const cg = new ContentGenerator({
+          language: ch.language || 'en',
+          timezone: ch.timezone || 'Africa/Addis_Ababa',
+        });
+        const promoCode = ch.coupon_code || 'SM100';
+        const content = await cg.generateLiveStatus(matchesWithChanges, promoCode);
+        await telegram.sendLiveStatus(content, matchesWithChanges, ch);
+        channelResults.push({ channel: ch.channel_id, success: true });
+      } catch (err) {
+        channelResults.push({ channel: ch.channel_id, success: false, error: err.message });
+      }
+    }
 
     return res.status(200).json({
       success: true,
-      message: `Live status sent (${midGame.length} matches around 60')`,
-      liveCount: midGame.length,
-      ethiopianTime,
-      result
+      message: `Live status sent (${midGame.length} matches)`,
+      channelResults,
+      ethiopianTime
     });
   } catch (error) {
     console.error('❌ Cron live-status error:', error);
-    return res.status(500).json({ success: false, message: 'Failed to execute live status cron', error: error.message });
+    return res.status(500).json({ success: false, error: error.message });
   }
 }

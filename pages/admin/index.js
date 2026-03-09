@@ -1,4 +1,3 @@
-// Admin Dashboard (moved from /)
 import { useState, useEffect } from 'react';
 import Layout from '../../components/Layout';
 
@@ -7,9 +6,8 @@ export default function AdminDashboard() {
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
-  const [showSettings, setShowSettings] = useState(false);
   const [botStatus, setBotStatus] = useState(null);
-  const [showBotCommands, setShowBotCommands] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [showCouponForm, setShowCouponForm] = useState(false);
 
   useEffect(() => {
@@ -25,119 +23,286 @@ export default function AdminDashboard() {
   const fetchSettings = async () => {
     try { const r = await fetch('/api/settings'); const d = await r.json(); setSettings(d.settings); } catch {}
   };
-  const updateSettings = async (newSettings) => {
-    setLoading(true);
-    try {
-      const r = await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newSettings) });
-      const d = await r.json(); setSettings(d.settings); setMessage('Settings updated successfully!'); await fetchStatus();
-    } catch (e) { setMessage('Failed to update settings: ' + e.message); }
-    setLoading(false);
-  };
   const fetchBotStatus = async () => {
     try {
       const r = await fetch('/api/simple-bot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'status' }) });
       const d = await r.json();
-      setBotStatus({ data: { isRunning: d.status === 'running', adminUsers: [], commands: d.availableActions || [], status: d.status, timestamp: d.timestamp } });
+      setBotStatus({ isRunning: d.status === 'running', commands: d.availableActions || [], status: d.status });
     } catch {}
   };
   const autoStartBot = async () => {
     try {
       const r = await fetch('/api/simple-bot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start' }) });
-      const d = await r.json(); if (d.success) await fetchBotStatus();
+      const d = await r.json();
+      if (d.success) await fetchBotStatus();
     } catch {}
   };
-  const startBotCommands = async () => { setLoading(true); try { const r = await fetch('/api/simple-bot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start' }) }); const d = await r.json(); setMessage(d.success ? '✅ Bot commands started successfully!' : '❌ Failed to start bot commands: ' + d.message); await fetchBotStatus(); } catch (e) { setMessage('❌ Error starting bot commands: ' + e.message); } setLoading(false); };
-  const stopBotCommands = async () => { setLoading(true); try { const r = await fetch('/api/simple-bot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'stop' }) }); const d = await r.json(); setMessage(d.success ? '🛑 Bot commands stopped' : '❌ Failed to stop bot commands: ' + d.message); await fetchBotStatus(); } catch (e) { setMessage('❌ Error stopping bot commands: ' + e.message); } setLoading(false); };
-  const clearBotCommands = async () => { if (!confirm('Are you sure you want to clear all bot commands?')) return; setLoading(true); try { const r = await fetch('/api/bot/clear-commands', { method: 'POST', headers: { 'Content-Type': 'application/json' } }); const d = await r.json(); setMessage(d.success ? '🗑️ Bot commands cleared successfully!' : '❌ Failed to clear bot commands: ' + d.message); await fetchBotStatus(); } catch (e) { setMessage('❌ Error clearing bot commands: ' + e.message); } setLoading(false); };
+
+  const botAction = async (action) => {
+    setLoading(true);
+    try {
+      const r = await fetch('/api/simple-bot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) });
+      const d = await r.json();
+      setMessage(d.success ? `Bot ${action} successful` : `Failed: ${d.message}`);
+      await fetchBotStatus();
+    } catch (e) { setMessage('Error: ' + e.message); }
+    setLoading(false);
+  };
+
   const restartBot = async () => {
     setLoading(true);
-    setMessage('Restarting bot…');
+    setMessage('Restarting bot...');
     try {
       await fetch('/api/simple-bot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'stop' }) });
       await new Promise(r => setTimeout(r, 1000));
       const r = await fetch('/api/simple-bot', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'start' }) });
       const d = await r.json();
-      setMessage(d.success ? '🔄 Bot restarted' : ('❌ Restart failed: ' + (d.message||'')));
+      setMessage(d.success ? 'Bot restarted successfully' : 'Restart failed: ' + (d.message || ''));
       await fetchBotStatus();
-    } catch (e) {
-      setMessage('❌ Restart error: ' + e.message);
-    }
+    } catch (e) { setMessage('Restart error: ' + e.message); }
     setLoading(false);
   };
-  const startSystem = async () => { setLoading(true); try { const r = await fetch('/api/start', { method: 'POST' }); const d = await r.json(); setMessage(d.message); await fetchStatus(); } catch (e) { setMessage('Failed to start system: ' + e.message); } setLoading(false); };
-  const sendPredictions = async () => { setLoading(true); try { const r = await fetch('/api/manual/predictions', { method: 'POST' }); const d = await r.json(); setMessage(d.message); await fetchStatus(); } catch (e) { setMessage('Failed to send predictions: ' + e.message); } setLoading(false); };
-  const sendResults = async () => { setLoading(true); try { const r = await fetch('/api/manual/results', { method: 'POST' }); const d = await r.json(); setMessage(d.message); await fetchStatus(); } catch (e) { setMessage('Failed to send results: ' + e.message); } setLoading(false); };
-  const sendPromo = async (promoType = 'football') => { setLoading(true); try { const r = await fetch('/api/manual/promo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ promoType }) }); const d = await r.json(); setMessage(d.message); await fetchStatus(); } catch (e) { setMessage('Failed to send promo: ' + e.message); } setLoading(false); };
-  const sendBonus = async () => { const bonusText = prompt('Enter bonus message (in Amharic):'); if (!bonusText) return; setLoading(true); try { const r = await fetch('/api/manual/bonus', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bonusText }) }); const d = await r.json(); setMessage(d.message); await fetchStatus(); } catch (e) { setMessage('Failed to send bonus: ' + e.message); } setLoading(false); };
-  const sendPersonalCoupons = async () => {
-    const promoCode = prompt('Enter promo code to send (e.g., SM100):');
-    if (!promoCode) return;
-    const days = Number(prompt('Since how many days back? (default 7)')) || 7;
-    const since = new Date(Date.now() - days*24*60*60*1000).toISOString();
+
+  const startSystem = async () => {
+    setLoading(true);
+    try { const r = await fetch('/api/start', { method: 'POST' }); const d = await r.json(); setMessage(d.message); await fetchStatus(); } catch (e) { setMessage('Failed: ' + e.message); }
+    setLoading(false);
+  };
+
+  const sendManual = async (endpoint) => {
+    setLoading(true);
+    try { const r = await fetch(endpoint, { method: 'POST' }); const d = await r.json(); setMessage(d.message); await fetchStatus(); } catch (e) { setMessage('Failed: ' + e.message); }
+    setLoading(false);
+  };
+
+  const sendPromo = async (promoType) => {
     setLoading(true);
     try {
-      const r = await fetch('/api/admin/send-personal-coupons', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.NEXT_PUBLIC_ADMIN_SECRET || ''}` }, body: JSON.stringify({ promoCode, since }) });
-      const d = await r.json();
-      setMessage(d.success ? `✅ Sent to ${d.sent}/${d.targets}` : `❌ Failed: ${d.message}`);
+      const r = await fetch('/api/manual/promo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ promoType }) });
+      const d = await r.json(); setMessage(d.message); await fetchStatus();
     } catch (e) { setMessage('Failed: ' + e.message); }
     setLoading(false);
   };
+
+  const sendBonus = async () => {
+    const bonusText = prompt('Enter bonus message:');
+    if (!bonusText) return;
+    setLoading(true);
+    try {
+      const r = await fetch('/api/manual/bonus', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bonusText }) });
+      const d = await r.json(); setMessage(d.message); await fetchStatus();
+    } catch (e) { setMessage('Failed: ' + e.message); }
+    setLoading(false);
+  };
+
   const forceWebhookUpdate = async () => {
     setLoading(true);
-    setMessage('Updating webhook...');
     try {
       const r = await fetch('/api/admin/force-webhook-update', { method: 'POST' });
       const d = await r.json();
-      setMessage(d.success ? '✅ Webhook updated successfully!' : '❌ Failed to update webhook: ' + d.message);
-    } catch (e) {
-      setMessage('❌ Error updating webhook: ' + e.message);
-    }
+      setMessage(d.success ? 'Webhook updated successfully' : 'Failed: ' + d.message);
+    } catch (e) { setMessage('Error: ' + e.message); }
+    setLoading(false);
+  };
+
+  const updateSettings = async () => {
+    setLoading(true);
+    try {
+      const r = await fetch('/api/settings', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) });
+      const d = await r.json(); setSettings(d.settings); setMessage('Settings updated successfully'); await fetchStatus();
+    } catch (e) { setMessage('Failed: ' + e.message); }
     setLoading(false);
   };
 
   return (
     <Layout>
-    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px' }}>
-      <div style={{ backgroundColor: '#2c3e50', color: 'white', padding: '20px', borderRadius: '10px', marginBottom: '20px', textAlign: 'center' }}>
-        <h1>🎯 SportMaster Dynamic Automated Posts</h1>
-        <p>Admin dashboard</p>
-        <p><a href="/analytics" style={{ color: '#9fe3ff' }}>Go to Analytics →</a></p>
-        <p><strong>Language:</strong> English | <strong>Timezone:</strong> Africa/Addis_Ababa | <strong>Website:</strong> {settings?.websiteUrl || 't.me/Sportmsterbot'}</p>
-        <div style={{ marginTop: '10px', display: 'flex', gap: '10px', justifyContent: 'center' }}>
-          <button onClick={() => setShowSettings(!showSettings)} style={{ padding: '8px 16px', backgroundColor: showSettings ? '#e74c3c' : '#27ae60', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>{showSettings ? '🔒 Hide Settings' : '⚙️ Show Settings'}</button>
-          <button onClick={() => setShowBotCommands(!showBotCommands)} style={{ padding: '8px 16px', backgroundColor: showBotCommands ? '#e74c3c' : '#3498db', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>{showBotCommands ? '🤖 Hide Bot Commands' : '🤖 Bot Commands'}</button>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <div>
+          <h1 style={{ margin: '0 0 4px', fontSize: 24 }}>Admin Control Panel</h1>
+          <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: 13 }}>
+            Bot controls, settings, and manual content triggers
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn-secondary" onClick={() => setShowSettings(!showSettings)}>
+            {showSettings ? 'Hide Settings' : 'Settings'}
+          </button>
         </div>
       </div>
 
-      <div style={{ background: 'white', padding: 20, borderRadius: 10, marginTop: 20 }}>
-        <h2>Quick Actions</h2>
-        <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
-          <button onClick={startSystem}>Start System</button>
-          <button onClick={restartBot}>Restart Bot</button>
-          <button onClick={forceWebhookUpdate} style={{ backgroundColor: '#e74c3c' }}>🔄 Force Webhook Update</button>
-          <button onClick={sendPredictions}>Send Predictions</button>
-          <button onClick={sendResults}>Send Results</button>
-          <button onClick={()=>sendPromo('football')}>Send Football Promo</button>
-          <button onClick={sendBonus}>Send Custom Bonus</button>
-          <button onClick={()=> setShowCouponForm(true)}>Send Personal Coupons (DM)</button>
+      {/* Message Banner */}
+      {message && (
+        <div className="panel" style={{
+          padding: '12px 16px', marginBottom: 16,
+          borderColor: message.toLowerCase().includes('fail') || message.toLowerCase().includes('error') ? 'var(--red)' : 'var(--green)',
+          background: message.toLowerCase().includes('fail') || message.toLowerCase().includes('error') ? 'var(--red-bg)' : 'var(--green-bg)',
+        }}>
+          {message}
+          <button onClick={() => setMessage('')} style={{ float: 'right', background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 16 }}>&times;</button>
+        </div>
+      )}
+
+      {/* System Status */}
+      <div className="panel">
+        <h2 style={{ fontSize: 16, marginBottom: 16 }}>System Status</h2>
+        <div className="kpi-grid">
+          <div className="card">
+            <div style={{ fontSize: 14, fontWeight: 600, color: botStatus?.isRunning ? 'var(--green)' : 'var(--red)' }}>
+              {botStatus?.isRunning ? 'Running' : 'Stopped'}
+            </div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 4 }}>Bot Status</div>
+          </div>
+          <div className="card">
+            <div style={{ fontSize: 14, fontWeight: 600, color: systemStatus?.system?.status === 'running' ? 'var(--green)' : 'var(--text-muted)' }}>
+              {systemStatus?.system?.status || '—'}
+            </div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 4 }}>System</div>
+          </div>
+          <div className="card">
+            <div style={{ fontSize: 14, fontWeight: 600 }}>{systemStatus?.system?.dailyStats?.predictionsPosted || 0}</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 4 }}>Predictions Today</div>
+          </div>
+          <div className="card">
+            <div style={{ fontSize: 14, fontWeight: 600 }}>{systemStatus?.system?.dailyStats?.resultsPosted || 0}</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 4 }}>Results Today</div>
+          </div>
+          <div className="card">
+            <div style={{ fontSize: 14, fontWeight: 600 }}>{systemStatus?.system?.dailyStats?.promosPosted || 0}</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 4 }}>Promos Today</div>
+          </div>
+          <div className="card">
+            <div style={{ fontSize: 14, fontWeight: 600 }}>{systemStatus?.system?.dailyStats?.errors || 0}</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: 11, marginTop: 4 }}>Errors</div>
+          </div>
         </div>
       </div>
 
-      <CouponForm visible={showCouponForm} onClose={()=> setShowCouponForm(false)} onSent={(msg)=> setMessage(msg)} />
+      {/* Bot Controls */}
+      <div className="panel">
+        <h2 style={{ fontSize: 16, marginBottom: 16 }}>Bot Controls</h2>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn-primary" disabled={loading || botStatus?.isRunning} onClick={() => botAction('start')}>Start Bot</button>
+          <button className="btn-secondary" disabled={loading || !botStatus?.isRunning} onClick={() => botAction('stop')}>Stop Bot</button>
+          <button className="btn-secondary" disabled={loading} onClick={restartBot}>Restart Bot</button>
+          <button className="btn-secondary" disabled={loading} onClick={startSystem}>Start System</button>
+          <button className="btn-secondary" disabled={loading} onClick={forceWebhookUpdate} style={{ borderColor: 'var(--red)', color: 'var(--red)' }}>Force Webhook Update</button>
+          <button className="btn-secondary" disabled={loading} onClick={fetchBotStatus}>Refresh Status</button>
+        </div>
+      </div>
 
-    </div>
+      {/* Quick Sends */}
+      <div className="panel">
+        <h2 style={{ fontSize: 16, marginBottom: 16 }}>Quick Sends</h2>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button className="btn-primary" disabled={loading} onClick={() => sendManual('/api/manual/predictions')}>Send Predictions</button>
+          <button className="btn-primary" disabled={loading} onClick={() => sendManual('/api/manual/results')}>Send Results</button>
+          <button className="btn-secondary" disabled={loading} onClick={() => sendPromo('football')}>Football Promo</button>
+          <button className="btn-secondary" disabled={loading} onClick={() => sendPromo('casino')}>Casino Promo</button>
+          <button className="btn-secondary" disabled={loading} onClick={sendBonus}>Custom Bonus</button>
+          <button className="btn-secondary" disabled={loading} onClick={() => setShowCouponForm(!showCouponForm)}>Personal Coupons</button>
+        </div>
+      </div>
+
+      {/* Coupon Form */}
+      {showCouponForm && <CouponForm onClose={() => setShowCouponForm(false)} onSent={setMessage} />}
+
+      {/* Settings Panel */}
+      {showSettings && settings && (
+        <div className="panel">
+          <h2 style={{ fontSize: 16, marginBottom: 16 }}>System Settings</h2>
+
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 4 }}>Website URL</label>
+            <input value={settings.websiteUrl || ''} onChange={e => setSettings({ ...settings, websiteUrl: e.target.value })} placeholder="t.me/Sportmsterbot" />
+          </div>
+
+          {settings.promoCodes && (
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8 }}>Promo Codes</label>
+              <div className="grid2">
+                {Object.entries(settings.promoCodes).map(([key, value]) => (
+                  <div key={key}>
+                    <label style={{ display: 'block', fontSize: 12, color: 'var(--text-dim)', marginBottom: 2, textTransform: 'capitalize' }}>{key}</label>
+                    <input value={value} onChange={e => setSettings({ ...settings, promoCodes: { ...settings.promoCodes, [key]: e.target.value } })} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {settings.bonusOffers && (
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8 }}>Bonus Offers</label>
+              <div className="grid2">
+                {Object.entries(settings.bonusOffers).map(([key, value]) => (
+                  <div key={key}>
+                    <label style={{ display: 'block', fontSize: 12, color: 'var(--text-dim)', marginBottom: 2, textTransform: 'capitalize' }}>{key}</label>
+                    <input value={value} onChange={e => setSettings({ ...settings, bonusOffers: { ...settings.bonusOffers, [key]: e.target.value } })} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {settings.autoPosting && (
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 8 }}>Auto Posting</label>
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+                  <input type="checkbox" checked={settings.autoPosting.dynamicTiming} onChange={e => setSettings({ ...settings, autoPosting: { ...settings.autoPosting, dynamicTiming: e.target.checked } })} />
+                  Dynamic Timing
+                </label>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, color: 'var(--text-dim)', marginBottom: 2 }}>Hours Before Match</label>
+                  <input type="number" min="1" max="6" value={settings.autoPosting.hoursBeforeMatch} onChange={e => setSettings({ ...settings, autoPosting: { ...settings.autoPosting, hoursBeforeMatch: parseInt(e.target.value) } })} style={{ width: 80 }} />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, color: 'var(--text-dim)', marginBottom: 2 }}>Min Gap (min)</label>
+                  <input type="number" min="15" max="120" value={settings.autoPosting.minGapBetweenPosts} onChange={e => setSettings({ ...settings, autoPosting: { ...settings.autoPosting, minGapBetweenPosts: parseInt(e.target.value) } })} style={{ width: 80 }} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          <button className="btn-primary" disabled={loading} onClick={updateSettings}>
+            {loading ? 'Saving...' : 'Save Settings'}
+          </button>
+        </div>
+      )}
+
+      {/* Bot Commands Reference */}
+      <div className="panel" style={{ opacity: 0.85 }}>
+        <h2 style={{ fontSize: 16, marginBottom: 12 }}>Bot Commands Reference</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 8 }}>
+          {[
+            '/start — Main menu with buttons',
+            '/help — Commands list',
+            '/predictions — Send match predictions',
+            '/results — Send match results',
+            '/promo — Send promo message',
+            '/live — Live matches now',
+            '/today — Today\'s games',
+            '/status — System status',
+          ].map((cmd, i) => (
+            <div key={i} style={{ padding: '8px 12px', background: 'var(--bg)', borderRadius: 'var(--radius-sm)', fontSize: 13, fontFamily: 'monospace' }}>
+              {cmd}
+            </div>
+          ))}
+        </div>
+      </div>
     </Layout>
   );
 }
 
-function CouponForm({ visible, onClose, onSent }) {
+function CouponForm({ onClose, onSent }) {
   const [promoCode, setPromoCode] = useState('SM100');
   const [days, setDays] = useState(7);
   const [messageText, setMessageText] = useState('Special personal offer just for you!');
   const [dryRun, setDryRun] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  if (!visible) return null;
-  const since = new Date(Date.now() - Number(days||7) * 24 * 60 * 60 * 1000).toISOString();
+
+  const since = new Date(Date.now() - Number(days || 7) * 24 * 60 * 60 * 1000).toISOString();
+
   const submit = async () => {
     setSubmitting(true);
     try {
@@ -147,40 +312,41 @@ function CouponForm({ visible, onClose, onSent }) {
         body: JSON.stringify({ promoCode, messageText, since, dryRun })
       });
       const d = await r.json();
-      onSent?.(d.success ? `✅ ${dryRun ? 'Preview' : 'Sent'}: ${d.sent||0}/${d.targets}` : `❌ Failed: ${d.message}`);
+      onSent?.(d.success ? `${dryRun ? 'Preview' : 'Sent'}: ${d.sent || 0}/${d.targets}` : `Failed: ${d.message}`);
       if (d.success && !dryRun) onClose?.();
-    } catch (e) {
-      onSent?.('❌ Error: ' + e.message);
-    }
+    } catch (e) { onSent?.('Error: ' + e.message); }
     setSubmitting(false);
   };
+
   return (
-    <div style={{ marginTop:20, background:'white', borderRadius:10, padding:16 }}>
-      <h3>Send Personal Coupons</h3>
-      <div style={{ display:'grid', gap:10, gridTemplateColumns:'repeat(2, minmax(0, 1fr))' }}>
-        <label>Promo Code
-          <input value={promoCode} onChange={e=>setPromoCode(e.target.value)} />
-        </label>
-        <label>Days Back
-          <input type="number" min="1" max="90" value={days} onChange={e=>setDays(e.target.value)} />
-        </label>
+    <div className="panel">
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+        <h3 style={{ margin: 0, fontSize: 16 }}>Send Personal Coupons</h3>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 18 }}>&times;</button>
       </div>
-      <label style={{ display:'block', marginTop:10 }}>Message Text
-        <textarea rows={3} value={messageText} onChange={e=>setMessageText(e.target.value)} />
-      </label>
-      <label style={{ display:'flex', alignItems:'center', gap:8, marginTop:10 }}>
-        <input type="checkbox" checked={dryRun} onChange={e=>setDryRun(e.target.checked)} /> Preview only (no send)
-      </label>
-      <div style={{ display:'flex', gap:10, marginTop:12 }}>
-        <button disabled={submitting} onClick={submit}>{dryRun ? 'Preview' : 'Send'}</button>
-        <button disabled={submitting} onClick={onClose}>Close</button>
+      <div className="grid2" style={{ marginBottom: 12 }}>
+        <div>
+          <label style={{ display: 'block', fontSize: 12, color: 'var(--text-dim)', marginBottom: 4 }}>Promo Code</label>
+          <input value={promoCode} onChange={e => setPromoCode(e.target.value)} />
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: 12, color: 'var(--text-dim)', marginBottom: 4 }}>Days Back</label>
+          <input type="number" min="1" max="90" value={days} onChange={e => setDays(e.target.value)} />
+        </div>
       </div>
-      <div style={{ marginTop:8, opacity:.8 }}>Targets window since: {since}</div>
-      <style jsx>{`
-        input, textarea { width: 100%; border: 1px solid #e2e8f0; border-radius: 8px; padding: 8px 10px; }
-        h3 { margin-top: 0; }
-      `}</style>
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ display: 'block', fontSize: 12, color: 'var(--text-dim)', marginBottom: 4 }}>Message Text</label>
+        <textarea rows={3} value={messageText} onChange={e => setMessageText(e.target.value)} />
+      </div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 12, cursor: 'pointer' }}>
+        <input type="checkbox" checked={dryRun} onChange={e => setDryRun(e.target.checked)} />
+        Preview only (no send)
+      </label>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button className="btn-primary" disabled={submitting} onClick={submit}>{dryRun ? 'Preview' : 'Send'}</button>
+        <button className="btn-secondary" disabled={submitting} onClick={onClose}>Cancel</button>
+      </div>
+      <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-dim)' }}>Target window since: {since}</div>
     </div>
   );
 }
-

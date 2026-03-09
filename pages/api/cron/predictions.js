@@ -1,21 +1,17 @@
-// Manual predictions endpoint - for testing and manual triggers
-// The automated scheduling is now handled by daily-setup.js + check-timing.js
+// Manual predictions endpoint — Multi-Channel
+// Automated scheduling handled by daily-setup.js + check-timing.js
 
 const FootballAPI = require('../../../lib/football-api');
 const ContentGenerator = require('../../../lib/content-generator');
 const TelegramManager = require('../../../lib/telegram');
 
 export default async function handler(req, res) {
-  // Allow both GET and POST for manual testing
   if (req.method !== 'GET' && req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // For manual testing, allow requests without auth header
   const isManualTest = req.method === 'POST' || !req.headers.authorization;
-  
   if (!isManualTest) {
-    // Verify this is a legitimate cron request
     const authHeader = req.headers.authorization;
     if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -23,73 +19,64 @@ export default async function handler(req, res) {
   }
 
   try {
-    console.log('🎯 Manual predictions trigger...');
-    
-    // Load settings for website URL and promo codes
+    console.log('🎯 Manual predictions trigger (all channels)...');
+
+    const { getActiveChannels } = require('../../../lib/channel-config');
+    const channels = await getActiveChannels();
+
     let settings;
     try {
       const { systemSettings } = await import('../settings');
       settings = systemSettings;
-    } catch (error) {
-      console.log('⚠️ Using default settings');
-      settings = {
-        websiteUrl: '',
-        promoCodes: ['SM100'],
-        autoPosting: { dynamicTiming: true }
-      };
+    } catch (_) {
+      settings = { websiteUrl: '', promoCodes: ['SM100'], autoPosting: { dynamicTiming: true } };
     }
 
-    // Initialize components
     const footballAPI = new FootballAPI();
-    const contentGenerator = new ContentGenerator(settings.websiteUrl);
     const telegram = new TelegramManager();
+    const results = [];
 
-    // Get today's matches
-    let matches;
-    try {
-      matches = await footballAPI.getEnhancedTop5Matches();
-      console.log('✅ Enhanced match data loaded');
-    } catch (error) {
-      console.log('⚠️ Enhanced data failed, using basic matches');
-      matches = await footballAPI.getTodayMatches();
+    for (const ch of channels) {
+      try {
+        const leagues = ch.leagues || [];
+        let matches;
+        try {
+          matches = await footballAPI.getEnhancedTop5Matches(leagues);
+        } catch (_) {
+          matches = await footballAPI.getTodayMatches(leagues);
+        }
+        if (matches.length === 0) {
+          results.push({ channel: ch.channel_id, success: true, matchCount: 0 });
+          continue;
+        }
+
+        const cg = new ContentGenerator({
+          language: ch.language || 'en',
+          timezone: ch.timezone || 'Africa/Addis_Ababa',
+          websiteUrl: settings.websiteUrl,
+        });
+
+        const promoCode = ch.coupon_code || 'SM100';
+        const content = await cg.generateTop5Predictions(matches, promoCode);
+        const message = await telegram.sendPredictions(content, matches, ch);
+
+        results.push({ channel: ch.channel_id, success: true, matchCount: matches.length, messageIds: message.messageIds });
+        console.log(`✅ Predictions sent to ${ch.channel_id}`);
+      } catch (err) {
+        results.push({ channel: ch.channel_id, success: false, error: err.message });
+        console.error(`❌ Predictions failed for ${ch.channel_id}:`, err.message);
+      }
     }
 
-    if (matches.length === 0) {
-      return res.status(200).json({
-        success: true,
-        message: 'No matches found for predictions',
-        matchCount: 0,
-        ethiopianTime: new Date().toLocaleString("en-US", {timeZone: "Africa/Addis_Ababa"})
-      });
-    }
-
-    // Generate and send predictions with AI images
-    const randomPromoCode = settings.promoCodes[Math.floor(Math.random() * settings.promoCodes.length)];
-    const content = await contentGenerator.generateTop5Predictions(matches, randomPromoCode);
-    const message = await telegram.sendPredictions(content, matches);
-
-    console.log('✅ Manual predictions sent successfully');
-    
     res.status(200).json({
       success: true,
-      message: 'Manual predictions sent successfully',
-      matchCount: matches.length,
-      hasEnhancedData: matches.length > 0 && matches[0].homeTeamData,
-      messageId: message.message_id,
-      promoCode: randomPromoCode,
-      ethiopianTime: new Date().toLocaleString("en-US", {timeZone: "Africa/Addis_Ababa"}),
+      message: `Predictions sent to ${results.filter(r => r.success).length}/${channels.length} channels`,
+      results,
+      ethiopianTime: new Date().toLocaleString('en-US', { timeZone: 'Africa/Addis_Ababa' }),
       executedAt: new Date().toISOString()
     });
-
   } catch (error) {
     console.error('❌ Manual predictions error:', error);
-    
-    res.status(500).json({
-      success: false,
-      message: 'Failed to execute manual predictions',
-      error: error.message,
-      ethiopianTime: new Date().toLocaleString("en-US", {timeZone: "Africa/Addis_Ababa"}),
-      executedAt: new Date().toISOString()
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 }

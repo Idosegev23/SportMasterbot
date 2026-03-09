@@ -596,24 +596,33 @@ export default async function handler(req, res) {
             await botInstance.emergencyStop(chatId);
             break;
 
-          // Promo send path — channel-aware
+          // Promo send path — DIRECT (no HTTP self-call)
           case 'promo:send:with_buttons':
           case 'promo:send:text_only':
             try {
               const pending = botInstance._pendingPromo?.get(chatId);
-              const baseUrl = pending?.baseUrl || botInstance.getBaseUrl();
               const promoChannelId = pending?.channelId;
-              const resp = await axios.post(`${baseUrl}/api/manual/promo`, {
-                withButtons: action.endsWith('with_buttons'),
-                channelId: promoChannelId
-              }, { headers: { 'Content-Type': 'application/json', 'x-bot-internal': 'true' }, timeout: 60000 });
               botInstance._pendingPromo?.delete(chatId);
-              const targetCh = promoChannelId || process.env.CHANNEL_ID;
-              if (resp.data.success) {
-                await botInstance.bot.sendMessage(chatId, `✅ Promo sent to <b>${targetCh}</b>!`, { parse_mode: 'HTML' });
+
+              const { getChannel } = require('../../../lib/channel-config');
+              const promoChannelConfig = promoChannelId ? await getChannel(promoChannelId) : null;
+
+              const TelegramManager = require('../../../lib/telegram');
+              const promoTelegram = new TelegramManager();
+              const promoTarget = promoChannelConfig?.channel_id || promoTelegram.channelId;
+
+              if (action.endsWith('with_buttons')) {
+                await promoTelegram.executePromoCommand('football', promoChannelConfig);
               } else {
-                await botInstance.bot.sendMessage(chatId, '❌ ' + (resp.data.message || 'Unknown error'));
+                const content = '🎁 Special Offer!\n\nUse code now in the bot.';
+                const msg = await promoTelegram.bot.sendMessage(promoTarget, content, {
+                  parse_mode: 'HTML', disable_web_page_preview: true,
+                  reply_markup: { inline_keyboard: [[{ text: '👤 Get Personal Coupons', url: 'https://t.me/Sportmsterbot?start=join_personal' }]] }
+                });
+                try { await promoTelegram.logPostToSupabase('promo', content, msg?.message_id, {}, promoChannelConfig); } catch (_) {}
               }
+
+              await botInstance.bot.sendMessage(chatId, `✅ Promo sent to <b>${promoTarget}</b>!`, { parse_mode: 'HTML' });
             } catch (e) {
               await botInstance.bot.sendMessage(chatId, '❌ Failed: ' + e.message);
             }

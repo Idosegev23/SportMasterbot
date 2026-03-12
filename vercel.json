@@ -16,6 +16,9 @@
     "pages/api/cron/promo.js": {
       "maxDuration": 240
     },
+    "pages/api/cron/news.js": {
+      "maxDuration": 240
+    },
     "pages/api/**/*.js": {
       "maxDuration": 30
     }
